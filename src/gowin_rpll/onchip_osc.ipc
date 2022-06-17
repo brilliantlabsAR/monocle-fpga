@@ -1,0 +1,12 @@
+[General]
+ipc_version=4
+file=onchip_osc
+module=onchip_osc
+target_device=gw1n9c-099
+type=clock_osc
+version=3.0
+
+[Config]
+FREQ=10
+LANG=0
+REGULATOR_ENABLE=false

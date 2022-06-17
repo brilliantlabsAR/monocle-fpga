@@ -1,0 +1,60 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW1N-9C" pn="GW1N-LV9MG100C6/I5">gw1n9c-099</Device>
+    <FileList>
+        <File path="../src/arbiter.v" type="file.verilog" enable="1"/>
+        <File path="../src/audio_wr_burst_afifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/axis_register.v" type="file.verilog" enable="1"/>
+        <File path="../src/cam_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/capt_fifo_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/chk_sum_16.v" type="file.verilog" enable="1"/>
+        <File path="../src/clk_div.v" type="file.verilog" enable="1"/>
+        <File path="../src/color_bar.v" type="file.verilog" enable="1"/>
+        <File path="../src/data_up_conv.v" type="file.verilog" enable="1"/>
+        <File path="../src/dc_32to16.v" type="file.verilog" enable="1"/>
+        <File path="../src/dc_8to32.v" type="file.verilog" enable="1"/>
+        <File path="../src/defines.v" type="file.verilog" enable="1"/>
+        <File path="../src/disp_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/disp_sync_gen.v" type="file.verilog" enable="1"/>
+        <File path="../src/dual_clock_fifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo/fifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo/fifo_fwft.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo/fifo_fwft_adapter.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo/simple_dpram_sclk.v" type="file.verilog" enable="1"/>
+        <File path="../src/fpga_top.v" type="file.verilog" enable="1"/>
+        <File path="../src/frm_trim.v" type="file.verilog" enable="1"/>
+        <File path="../src/functions.v" type="file.verilog" enable="1"/>
+        <File path="../src/luma_correction.v" type="file.verilog" enable="1"/>
+        <File path="../src/mem_rd_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="../src/mic_clk_gen.v" type="file.verilog" enable="1"/>
+        <File path="../src/mic_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/pulsar.v" type="file.verilog" enable="1"/>
+        <File path="../src/rb_shift.v" type="file.verilog" enable="1"/>
+        <File path="../src/rd_burst_sfifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/reg_addr_defines.v" type="file.verilog" enable="1"/>
+        <File path="../src/reg_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/rst_sync.v" type="file.verilog" enable="1"/>
+        <File path="../src/spi_slave.v" type="file.verilog" enable="1"/>
+        <File path="../src/stat.v" type="file.verilog" enable="1"/>
+        <File path="../src/stream_downsizer.v" type="file.verilog" enable="1"/>
+        <File path="../src/stream_dual_clock_fifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/stream_fifo_if.v" type="file.verilog" enable="1"/>
+        <File path="../src/stream_upsizer.v" type="file.verilog" enable="1"/>
+        <File path="../src/wr_burst_afifo.v" type="file.verilog" enable="1"/>
+        <File path="../src/zoom.v" type="file.verilog" enable="1"/>
+        <File path="../src/bram/sp_bram_36x512.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo_top/afifo_fwft_36x512.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo_top/fifo_fwft_18x1024.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo_top/fifo_fwft_18x2048.v" type="file.verilog" enable="1"/>
+        <File path="../src/fifo_top/fifo_fwft_36x512.v" type="file.verilog" enable="1"/>
+        <File path="../src/gowin_rpll/disp_pll.v" type="file.verilog" enable="1"/>
+        <File path="../src/gowin_rpll/mem_pll.v" type="file.verilog" enable="1"/>
+        <File path="../src/gowin_rpll/onchip_osc.v" type="file.verilog" enable="1"/>
+        <File path="../src/apsram_top.vo" type="file.netlist" enable="1"/>
+        <File path="../src/mk11_pins.cst" type="file.cst" enable="1"/>
+        <File path="../src/timing/timings_40mhz.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>

@@ -1,0 +1,66 @@
+IO_PORT "SCLK" PULL_MODE=NONE;
+IO_LOC "SCLK"            E10;
+IO_PORT "MOSI" PULL_MODE=NONE;
+IO_LOC "MOSI"            F9;
+IO_PORT "MISO" PULL_MODE=NONE;
+IO_LOC "MISO"            G9;
+IO_PORT "SS" PULL_MODE=NONE;
+IO_LOC "SS"              D4;
+
+//IO_LOC "FLASH_CS"              F10;
+
+IO_LOC "mic_clk"         H8;
+IO_LOC "mic_data"        G10;
+IO_LOC "mic_ws"          H9;
+
+IO_LOC "cam_clk"         A7;
+IO_LOC "cam_xclk"        A6;
+IO_LOC "cam_href"        C6;
+IO_LOC "cam_vsync"       B6;
+
+IO_LOC "cam_data[0]"     A4;
+IO_LOC "cam_data[1]"     A3;
+IO_LOC "cam_data[2]"     B4;
+IO_LOC "cam_data[3]"     C4;
+IO_LOC "cam_data[4]"     D5;
+IO_LOC "cam_data[5]"     D6;
+IO_LOC "cam_data[6]"     C5;
+IO_LOC "cam_data[7]"     B5;
+
+
+IO_LOC "mem_clk[0]"      E5;
+IO_LOC "mem_ce_n[0]"     J6;
+IO_LOC "mem_ce_n[1]"     H6;
+IO_LOC "mem_dqs_mask[0]" F5;
+IO_LOC "mem_dqs_mask[1]" G3;
+
+IO_LOC "mem_dq[0]"       G7;
+IO_LOC "mem_dq[1]"       H1;
+IO_LOC "mem_dq[2]"       K10;
+IO_LOC "mem_dq[3]"       K9;
+IO_LOC "mem_dq[4]"       J10;
+IO_LOC "mem_dq[5]"       K1;
+IO_LOC "mem_dq[6]"       K2;
+IO_LOC "mem_dq[7]"       G4;
+
+
+IO_LOC "disp_mclk"       F6;
+IO_LOC "disp_hsync"      G6;
+IO_LOC "disp_vsync"      F7;
+
+IO_LOC "disp_data[0]"    J3;
+IO_LOC "disp_data[1]"    H3;
+IO_LOC "disp_data[2]"    E4;
+IO_LOC "disp_data[3]"    F4;
+IO_LOC "disp_data[4]"    K3;
+IO_LOC "disp_data[5]"    K4;
+IO_LOC "disp_data[6]"    J4;
+IO_LOC "disp_data[7]"    H4;
+IO_LOC "disp_data[8]"    K5;
+IO_LOC "disp_data[9]"    K6;
+IO_LOC "disp_data[10]"   H5;
+IO_LOC "disp_data[11]"   G5;
+IO_LOC "disp_data[12]"   K7;
+IO_LOC "disp_data[13]"   K8;
+IO_LOC "disp_data[14]"   J7;
+IO_LOC "disp_data[15]"   H7;
