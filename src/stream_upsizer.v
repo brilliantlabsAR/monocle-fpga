@@ -1,5 +1,5 @@
 module stream_upsizer #(
-  parameter DW_IN = 0,
+  parameter DW_IN = 8,
   parameter SCALE = 0,
   parameter BIG_ENDIAN = 0
 )

@@ -37,11 +37,7 @@ module fpga_top (
   disp_mclk,
   disp_hsync,
   disp_vsync,
-  disp_data,
-  led0,
-  led1,
-  led2,
-  led3
+  disp_data
 );
 
 
@@ -85,10 +81,7 @@ module fpga_top (
   output wire                       disp_hsync;
   output wire                       disp_vsync;
   output wire [`DISP_DSIZE-1:0]     disp_data;
-  output wire                       led0;
-  output wire                       led1;
-  output wire                       led2;
-  output wire                       led3;
+
 
   reg  [31:0]                       rst_shift_reg; 
   wire                              rst_hw; 
@@ -879,16 +872,6 @@ module fpga_top (
     .capt_fifo_overrun    (capt_fifo_overrun)
   );  
   `endif
-  
-  //assign led0 = err_wr_vbfifo_full;
-  //assign led1 = wr_error;
-  //assign led2 = rd_error;
-  //assign led3 = disp_fifo_underrun;
-  
-  assign led0 = led_control[0];
-  assign led1 = led_control[1];
-  assign led2 = led_control[2];
-  assign led3 = led_control[3];
   
   
 endmodule

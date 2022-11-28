@@ -29,8 +29,10 @@ IO_LOC "cam_data[7]"     B5;
 
 
 IO_LOC "mem_clk[0]"      E5;
+IO_LOC "mem_clk[1]"      E8; // Unused pin
 IO_LOC "mem_ce_n[0]"     J6;
 IO_LOC "mem_ce_n[1]"     H6;
+
 IO_LOC "mem_dqs_mask[0]" F5;
 IO_LOC "mem_dqs_mask[1]" G3;
 

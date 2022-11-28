@@ -117,7 +117,7 @@ module arbiter (
   output reg  [CS_WIDTH*MASK_WIDTH-1:0] mem_data_mask;
   output wire [9:0]                 mem_burst_num;
   // Display FIFO Interface
-  output wire                       o_rpl_2x_done;;
+  output wire                       o_rpl_2x_done;
   output wire                       disp_avail;
   input  wire                       rfifo_full;
   output wire                       rfifo_wr_en;

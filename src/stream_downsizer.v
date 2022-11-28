@@ -1,5 +1,5 @@
 module stream_downsizer #(
-  parameter                         DW_OUT = 0,
+  parameter                         DW_OUT = 8,
   parameter                         SCALE = 0
 )(
   input                             clk,
