@@ -14,4 +14,4 @@ set_false_path -from [get_clocks {cam_clk}] -to [get_clocks {clk_board}]
 set_false_path -from [get_clocks {clk_board}] -to [get_clocks {cam_clk}] 
 set_false_path -from [get_clocks {cam_clk}] -to [get_clocks {spi_clk}]
 
-set_false_path -from [all_clocks] -to [get_regs {i_rst_sync/disp_rst_sync_0_s0 i_rst_sync/disp_rst_sync_1_s0 i_rst_sync/sys_rst_sync_0_s0 i_rst_sync/sys_rst_sync_1_s0 i_reg_if/rst_sw_s0}] 
+set_false_path -from [all_clocks] -to [get_regs {i_rst_sync/disp_rst_sync_0_s0 i_rst_sync/disp_rst_sync_1_s0 i_rst_sync/sys_rst_sync_0_s0 i_rst_sync/sys_rst_sync_1_s0}] 

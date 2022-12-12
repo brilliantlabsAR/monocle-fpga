@@ -13,6 +13,7 @@ module capt_fifo_if (
   resume_fill,
   cfifo_rd_vld,
   cfifo_rd_en,
+  cfifo_rd_cnt,
   cfifo_rd_data,
   sob,
   eob,
@@ -35,6 +36,7 @@ module capt_fifo_if (
   input  wire                       resume_fill;
   output wire                       cfifo_rd_vld;
   input  wire                       cfifo_rd_en;
+  output wire [11:0]                cfifo_rd_cnt;
   output wire [`REG_SIZE-1:0]       cfifo_rd_data/* synthesis syn_keep=1 */;
   output wire                       sob;
   output wire                       eob;
@@ -45,9 +47,9 @@ module capt_fifo_if (
   
   wire                              fifo_rd_en;
   wire [`DSIZE-1:0]                 fifo_rd_data;
+  wire [9:0] 			    fifo_rd_cnt;
   wire                              cfifo_aempty;
   wire                              cfifo_empty;
-  wire [9:0]                        cfifo_rd_cnt;
   wire                              dc_rdy;
   wire                              cfifo_full;
   wire                              chk_data_vld;
@@ -80,10 +82,11 @@ module capt_fifo_if (
     .RdReset             (rst_reg),
     .RdEn                (fifo_rd_en),
     .Q                   (fifo_rd_data),
-    .Rnum                (cfifo_rd_cnt),
+    .Rnum                (fifo_rd_cnt),
     .Empty               (cfifo_empty) 
   );
-  
+
+   
   //================================================
   //*** Register Clock Domain
   //================================================
@@ -95,7 +98,7 @@ module capt_fifo_if (
 
   assign fifo_rd_en     = !cfifo_empty && rd_data_cntr == 2'b11 && cfifo_rd_en ? 1'b1 :1'b0;
   assign cfifo_rd_vld   = !cfifo_empty || rd_data_cntr != 2'b00 ? 1'b1 : 1'b0;
-  
+
   //*** Data conversion
   always @(posedge clk_reg) begin
     if (rst_reg) begin
@@ -110,6 +113,9 @@ module capt_fifo_if (
                          rd_data_cntr == 2'b01 ? fifo_rd_data[8+:8]  :
                          rd_data_cntr == 2'b10 ? fifo_rd_data[16+:8] :
                                                  fifo_rd_data[24+:8] ;
+
+  assign cfifo_rd_cnt = { fifo_rd_cnt, 2'b00 } - rd_data_cntr;
+   
   
   //*** Convert 32 to 16
   assign chk_data = rd_data_cntr[1] == 1'b0 ? fifo_rd_data[15:0] :

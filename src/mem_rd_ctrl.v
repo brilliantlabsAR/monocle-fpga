@@ -156,9 +156,9 @@ module mem_rd_ctrl (
   always @(*) begin
     case (c_state)
       IDLE:
-        /*if (!bcq_empty) begin // Next capture buffer ready
+        if (CAPT_CNTRL_SEL && !bcq_empty) begin // Next capture buffer ready
           n_state = RD_BCQ;
-        end else */if (!CAPT_CNTRL_SEL && frm_avail) begin //OLED only
+        end else if (!CAPT_CNTRL_SEL && frm_avail) begin //OLED only
           n_state = SET_LIVE_MODE;
         end else begin
           n_state = IDLE;
@@ -178,11 +178,7 @@ module mem_rd_ctrl (
         n_state = BCQ_AVAIL;
         
       BCQ_AVAIL:
-        if (rd_eof) begin
-		  n_state = RD_FCQ;
-		end else begin
-          n_state = BCQ_AVAIL;
-        end
+	n_state = RD_FCQ;
         
       RD_FCQ:
         n_state = FCQ_AVAIL;
@@ -267,8 +263,8 @@ module mem_rd_ctrl (
       r_fnum <= {FNUM_WIDTH{1'b0}};
     end else if (c_state == SET_LIVE_MODE) begin
       r_fnum <= w_top_fnum;
-    //end else if (c_state == BCQ_AVAIL) begin
-    //  r_fnum <= r_head_fnum;
+    end else if (c_state == BCQ_AVAIL) begin
+       r_fnum <= r_head_fnum;
     end else if (rd_eof) begin
       if (c_state == LOAD_HEAD) begin
         r_fnum <= r_head_fnum;
@@ -283,7 +279,7 @@ module mem_rd_ctrl (
       end
     end
   end
-  
+
   // SOB
   assign rd_sob = ((r_fnum == r_head_fnum) && rd_sof) ? 1'b1 : 1'b0;
   
@@ -378,6 +374,8 @@ module mem_rd_ctrl (
       buf_avail <= 1'b0;
     end else if (c_state == FCQ_AVAIL) begin
       buf_avail <= 1'b1;
+    end else if (CAPT_CNTRL_SEL && rd_eof) begin
+      buf_avail <= 1'b0;
     end
   end
   

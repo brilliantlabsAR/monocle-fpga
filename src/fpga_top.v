@@ -254,6 +254,7 @@ module fpga_top (
   wire                              eob;
   wire                              cfifo_rd_vld;
   wire                              cfifo_rd_en;
+  wire [11:0] 			    cfifo_rd_cnt;
   wire [`REG_SIZE-1:0]              cfifo_rd_data;
   wire                              video_buf;
   wire                              audio_buf;
@@ -714,10 +715,48 @@ module fpga_top (
     .frm_lt_512k_err      (disp_frm_lt_512k_err)
   );
   `endif
-  
+
+   spi_api i_spi_api(
+     .clk                  (clk_board),
+     .reset                (reg_rst),
+     .SCLK                 (SCLK),
+     .MOSI                 (MOSI),
+     .MISO                 (MISO),
+     .SS                   (SS),
+     .en_xclk              (en_xclk),
+     .en_cam               (en_cam),
+     .en_zoom              (en_zoom),
+     .en_luma_cor          (en_luma_cor),
+     .sel_zoom_mode        (sel_zoom_mode),
+     .en_mic               (en_mic),
+     .sync_to_video        (sync_to_video),
+     .en_rb_shift          (en_rb_shift),
+     .disp_bars            (disp_bars),
+     .disp_busy            (disp_busy),
+     .disp_cam             (disp_cam),
+     .mem_control          (),
+     .discard_cbuf         (discard_cbuf),
+     .clr_chksm            (clr_chksm),
+     .resume_fill          (resume_fill),
+     .rd_audio             (rd_audio),
+     .capt_audio           (capt_audio),
+     .capt_video           (capt_video),
+     .capt_frm             (capt_frm),
+     .capt_en              (capt_en),
+     .rep_rate_control     (rep_rate_control),
+     .wr_burst_size        (wr_burst_size),
+     .rd_burst_size        (rd_burst_size),
+     .burst_wr_en          (burst_wr_en),
+     .burst_wdata          (burst_wdata),
+     .burst_rd_eof         (eob),
+     .burst_rd_cnt         (cfifo_rd_cnt),
+     .burst_rd_en          (cfifo_rd_en)
+   );
+
   //================================================
   // SPI Slave
   //================================================
+/*			  
   spi_slave i_spi_slave (
     .clk                  (clk_board),
     .rst_n                (async_rst_n),
@@ -735,10 +774,12 @@ module fpga_top (
     .MISO                 (MISO),
     .SS                   (SS)
   );
+*/
   
   //================================================
   // Register Interface
-  //================================================  
+  //================================================
+/*			  
   reg_if i_reg_if (
     .clk                  (clk_board),
     .rst_n                (~reg_rst),
@@ -817,7 +858,9 @@ module fpga_top (
     .capt_fifo_underrun   (capt_fifo_underrun),
     .capt_fifo_overrun    (capt_fifo_overrun)
   );
-  
+*/
+
+    
   // Burst FIFO for Testing Only
   `ifdef BURST_RDWR_TEST
   fifo_fwft #(
@@ -863,6 +906,7 @@ module fpga_top (
   `else
     .cfifo_rd_en          (cfifo_rd_en),
   `endif
+    .cfifo_rd_cnt         (cfifo_rd_cnt),
     .cfifo_rd_data        (cfifo_rd_data),
     .sob                  (sob),
     .eob                  (eob),
