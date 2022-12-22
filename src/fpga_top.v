@@ -110,10 +110,19 @@ module fpga_top (
   
   wire                              en_xclk;
   wire                              en_cam;
+  wire                              en_playback;
   wire                              en_zoom;
   wire                              en_luma_cor;
   wire [1:0]                        sel_zoom_mode;
-  
+   wire 			    replay_toggle;
+   
+  wire 			            en_graphics, graphics_swap_toggle;
+  wire 			            graphics_base_wren;
+  wire [31:0] 			    graphics_base_val;
+  wire [31:0] 			    gr_wr_base;
+  wire 			            gr_wr_base_rd;
+  wire 			            gr_wr_base_vld;
+
   wire                              en_mic;
   wire                              sync_to_video;
   
@@ -155,6 +164,12 @@ module fpga_top (
   wire                              a_rd_en;
   wire [`DSIZE-1:0]                 a_rd_data;
   wire                              err_abfifo_full;
+
+  wire 			    gr_wr_en;
+  wire [15:0] 		    gr_wr_data; 
+  wire 			    gr_burst_avail;
+  wire 			    gr_rd_en;
+  wire [`DSIZE-1:0] 	    gr_rd_data;
   
   wire [7:0]                        cam_frm_per_sec;
   wire [`STAT_CNTR_WIDTH-1:0]       cam_total_frm;
@@ -173,8 +188,6 @@ module fpga_top (
   wire                              capt_frm;
   wire                              capt_en;
   wire [4:0]                        rep_rate_control;
-  wire [`BURST_WIDTH-1:0]           wr_burst_size;
-  wire [`BURST_WIDTH-1:0]           rd_burst_size;
   wire [31:0]                       c_buf_size;
   
   wire                              rd_bfifo_afull;
@@ -248,8 +261,6 @@ module fpga_top (
   wire                              disp_frm_lt_512k_err;
   
     
-  wire                              burst_wr_en;
-  wire [`REG_SIZE-1:0]              burst_wdata;
   wire                              sob;
   wire                              eob;
   wire                              cfifo_rd_vld;
@@ -451,6 +462,20 @@ module fpga_top (
   `else
   assign a_burst_avail = 1'b0;
   `endif
+
+  gr_wr_burst_afifo gr_wr_burst_fifo (
+    .wr_rst               (reg_rst),
+    .wr_clk               (clk_board),
+    .wr_vld_i             (gr_wr_en),
+    .wr_rdy_o             (),
+    .wr_data_i            (gr_wr_data),
+    .rd_rst               (sys_rst),
+    .rd_clk               (sys_clk),
+    .burst_avail          (gr_burst_avail),
+    .burst_rd_en          (gr_rd_en),
+    .burst_rd_data        (gr_rd_data),
+    .err_bfifo_full       ()
+  );  
   
   `ifdef EN_DEBUG_CNTR
   stat #(
@@ -506,6 +531,10 @@ module fpga_top (
     .capt_en              (capt_en),
     .discard_cbuf         (discard_cbuf),
     .rep_rate_control     (rep_rate_control),
+    .replay_toggle        (replay_toggle),
+    .en_playback          (en_playback),
+    .en_graphics          (en_graphics),
+    .graphics_swap_toggle (graphics_swap_toggle),
     .en_mic               (en_mic),
     .en_zoom              (en_zoom),
     .en_luma_cor          (en_luma_cor),
@@ -516,6 +545,12 @@ module fpga_top (
     .a_burst_avail        (a_burst_avail),
     .a_rd_en              (a_rd_en),
     .a_rd_data            (a_rd_data),
+    .gr_wr_base           (gr_wr_base),
+    .gr_wr_base_rd        (gr_wr_base_rd),
+    .gr_wr_base_vld       (gr_wr_base_vld),
+    .gr_burst_avail       (gr_burst_avail),
+    .gr_rd_en             (gr_rd_en),
+    .gr_rd_data           (gr_rd_data),
     .mem_addr             (mem_addr),
     .mem_cmd              (mem_cmd),
     .mem_cmd_en           (mem_cmd_en),
@@ -725,9 +760,15 @@ module fpga_top (
      .SS                   (SS),
      .en_xclk              (en_xclk),
      .en_cam               (en_cam),
+     .en_playback          (en_playback),
      .en_zoom              (en_zoom),
      .en_luma_cor          (en_luma_cor),
      .sel_zoom_mode        (sel_zoom_mode),
+     .replay_toggle        (replay_toggle),
+     .en_graphics          (en_graphics),
+     .graphics_base_wren   (graphics_base_wren),
+     .graphics_base_val    (graphics_base_val),
+     .graphics_swap_toggle (graphics_swap_toggle),
      .en_mic               (en_mic),
      .sync_to_video        (sync_to_video),
      .en_rb_shift          (en_rb_shift),
@@ -744,139 +785,31 @@ module fpga_top (
      .capt_frm             (capt_frm),
      .capt_en              (capt_en),
      .rep_rate_control     (rep_rate_control),
-     .wr_burst_size        (wr_burst_size),
-     .rd_burst_size        (rd_burst_size),
-     .burst_wr_en          (burst_wr_en),
-     .burst_wdata          (burst_wdata),
+     .burst_wr_rdy         (~gr_base_fifo_full),
+     .burst_wr_en          (gr_wr_en),
+     .burst_wdata          (gr_wr_data),
      .burst_rd_eof         (eob),
      .burst_rd_cnt         (cfifo_rd_cnt),
      .burst_rd_en          (cfifo_rd_en)
    );
 
-  //================================================
-  // SPI Slave
-  //================================================
-/*			  
-  spi_slave i_spi_slave (
-    .clk                  (clk_board),
-    .rst_n                (async_rst_n),
-    .wr_addr              (wr_addr),
-    .wr_en                (wr_en),
-    .wr_data              (wr_data),
-    .rd_addr              (rd_addr),
-    .rd_en                (rd_en),
-    .rd_data              (rd_data),
-    .clr_err              (async_rst_n),
-    .wr_burst_size        (wr_burst_size),
-    .rd_burst_size        (rd_burst_size),
-    .SCLK                 (SCLK),
-    .MOSI                 (MOSI),
-    .MISO                 (MISO),
-    .SS                   (SS)
-  );
-*/
-  
-  //================================================
-  // Register Interface
-  //================================================
-/*			  
-  reg_if i_reg_if (
-    .clk                  (clk_board),
-    .rst_n                (~reg_rst),
-    .wr_addr              (wr_addr),
-    .wr_en                (wr_en),
-    .wr_data              (wr_data),
-    .rd_addr              (rd_addr),
-    .rd_en                (rd_en),
-    .rd_data              (rd_data),
-    .rst_sw               (rst_sw),
-    .mem_init_done        (mem_init_done),
-    .dbg_mrb_err          (dbg_mrb_err),
-    .err_wr_vbfifo_full   (err_wr_vbfifo_full),
-    .err_rd_vbfifo_full   (err_rd_vbfifo_full),
-    .err_abfifo_full      (err_abfifo_full),
-    .disp_fifo_underrun   (disp_fifo_underrun),
-    .disp_fifo_overrun    (disp_fifo_overrun),
-    `ifdef EN_DEBUG_CNTR
-    .cam_frm_per_sec      (cam_frm_per_sec),
-    .cam_total_frm        (cam_total_frm),
-    .cam_total_byte       (cam_total_byte),
-    .cam_lines_per_frm    (cam_lines_per_frm),
-    .cam_bytes_per_line   (cam_bytes_per_line),
-    .cam_bytes_per_frm    (cam_bytes_per_frm),
-    .cam_frm_lt_512k_err  (cam_frm_lt_512k_err),
-    .disp_frm_per_sec     (disp_frm_per_sec),
-    .disp_total_frm       (disp_total_frm),
-    .disp_total_byte      (disp_total_byte),
-    .disp_lines_per_frm   (disp_lines_per_frm),
-    .disp_bytes_per_line  (disp_bytes_per_line),
-    .disp_bytes_per_frm   (disp_bytes_per_frm),
-    .disp_frm_lt_512k_err (disp_frm_lt_512k_err),
-    `endif
-    .en_xclk              (en_xclk),
-    .en_cam               (en_cam),
-    .en_zoom              (en_zoom),
-    .en_luma_cor          (en_luma_cor),
-    .sel_zoom_mode        (sel_zoom_mode),
-    .en_mic               (en_mic),
-    .sync_to_video        (sync_to_video),
-    .led_control          (led_control),
-    .en_rb_shift          (en_rb_shift),
-    .disp_bars            (disp_bars),
-    .disp_busy            (disp_busy),
-    .disp_cam             (disp_cam),
-    .mem_control          (),
-    .discard_cbuf         (discard_cbuf),
-    .clr_chksm            (clr_chksm),
-    .resume_fill          (resume_fill),
-    .rd_audio             (rd_audio),
-    .capt_audio           (capt_audio),
-    .capt_video           (capt_video),
-    .capt_frm             (capt_frm),
-    .capt_en              (capt_en),
-    .rep_rate_control     (rep_rate_control),
-    .wr_burst_size        (wr_burst_size),
-    .rd_burst_size        (rd_burst_size),
-    .burst_wr_en          (burst_wr_en),
-    .burst_wdata          (burst_wdata),
-    .o_rpl_2x_done        (o_rpl_2x_done),
-    .c_frm_len            (c_frm_len),
-    .c_sel_zoom_mode      (c_sel_zoom_mode),
-    .c_en_zoom            (c_en_zoom),
-    .c_en_luma_cor        (c_en_luma_cor),
-    .video_buf            (c_rd_video_buf),
-    .frm_buf              (c_rd_frm_buf),
-    .audio_buf            (c_rd_audio_buf),
-    .c_buf_size           (c_buf_size),
-    .cfifo_rd_vld         (cfifo_rd_vld),
-    .sob                  (sob),
-    .eob                  (eob),
-    .burst_rd_en          (cfifo_rd_en),
-    .burst_rdata          (cfifo_rd_data),
-    .capt_byte_cntr       (capt_byte_cntr),
-    .capt_frm_chk_sum     (capt_frm_chk_sum),
-    .capt_fifo_underrun   (capt_fifo_underrun),
-    .capt_fifo_overrun    (capt_fifo_overrun)
-  );
-*/
+   wire gr_base_fifo_empty, gr_base_fifo_full;
 
-    
-  // Burst FIFO for Testing Only
-  `ifdef BURST_RDWR_TEST
-  fifo_fwft #(
-    .DATA_WIDTH           (8),
-    .DEPTH_WIDTH          (10) //1024
-  ) i_fifo_fwft (
-    .clk                  (clk_board),
-    .rst                  (rst_shift_reg[0]),
-    .din                  (burst_wdata),
-    .wr_en                (burst_wr_en),
-    .full                 (),
-    .dout                 (cfifo_rd_data),
-    .rd_en                (cfifo_rd_en),
-    .empty                (cfifo_rd_vld)
-  );
-  `else
+   dist_afifo_fwft_32x8 i_graphics_base_fifo (
+	.Data(graphics_base_val), //input [31:0] Data
+	.WrReset(reg_rst), //input WrReset
+	.RdReset(sys_rst), //input RdReset
+	.WrClk(clk_board), //input WrClk
+	.RdClk(sys_clk), //input RdClk
+	.WrEn(graphics_base_wren), //input WrEn
+	.RdEn(gr_wr_base_rd),
+	.Q(gr_wr_base),
+	.Empty(gr_base_fifo_empty),
+	.Full(gr_base_fifo_full)
+   );			  
+
+   assign gr_wr_base_vld = ~gr_base_fifo_empty;
+			  
   //wire                              rb_wr_en;
   //wire [`DSIZE-1:0]                 rb_wr_data;  
   //rb_shift i_rb_shift_capt (
@@ -915,8 +848,6 @@ module fpga_top (
     .capt_fifo_underrun   (capt_fifo_underrun),
     .capt_fifo_overrun    (capt_fifo_overrun)
   );  
-  `endif
-  
   
 endmodule
 

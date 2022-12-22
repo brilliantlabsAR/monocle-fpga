@@ -23,6 +23,7 @@ entity monocle_api is
     signal p_capture_apisig_write_req : out std_ulogic;
     signal p_capture_apisig_val : out std_ulogic_vector(7 downto 0);
     signal p_graphics_base_val : out std_ulogic_vector(31 downto 0);
+    signal p_graphics_base_wren : out std_ulogic;
     signal p_graphics_memin_write_rdy : out std_ulogic;
     signal p_graphics_memin_write_req : in std_ulogic;
     signal p_graphics_memin_val : out std_ulogic_vector(7 downto 0);
@@ -83,6 +84,7 @@ architecture rtl of monocle_api is
   signal graphics_base_reg : std_ulogic_vector(31 downto 0);
   signal graphics_base_en : std_ulogic;
   signal graphics_base_sel : std_ulogic;
+  signal graphics_base_en_d : std_ulogic;
   signal graphics_memin_sel : std_ulogic;
   signal graphics_memin_wr : std_ulogic;
   signal graphics_memin_reg : std_ulogic_vector(7 downto 0);
@@ -115,9 +117,10 @@ begin
   device_match(2) <= as_bit(p_ext_api_din = X"44");
   graphics_base_en <= (graphics_base_sel and datain_we_d) and datain_vld(3);
   p_graphics_base_val <= graphics_base_reg;
+  p_graphics_base_wren <= graphics_base_en_d;
   p_graphics_memin_val <= graphics_memin_reg;
   p_graphics_memin_write_rdy <= graphics_memin_wr;
-  p_graphics_apisig_write_req <= (device(2) and reg_we) and as_bit((p_ext_api_din = X"04") or (p_ext_api_din = X"05"));
+  p_graphics_apisig_write_req <= (device(2) and reg_we) and as_bit((((p_ext_api_din = X"04") or (p_ext_api_din = X"05")) or (p_ext_api_din = X"07")) or (p_ext_api_din = X"06"));
   p_graphics_apisig_val <= p_ext_api_din;
   device_match(3) <= as_bit(p_ext_api_din = X"10");
   camera_zoom_en <= (camera_zoom_sel and datain_we_d) and datain_vld(0);
@@ -306,6 +309,12 @@ begin
       elsif reg_we = '1' then
         graphics_base_sel <= device(2) and as_bit(p_ext_api_din = X"10");
       end if;
+    end if;
+  end process;
+  process (clk)
+  begin
+    if (clk'event and clk='1') then
+      graphics_base_en_d <= graphics_base_en;
     end if;
   end process;
   process (clk)

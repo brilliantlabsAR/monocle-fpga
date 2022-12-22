@@ -16,10 +16,21 @@ module arbiter (
   en_zoom,
   en_luma_cor,
   sel_zoom_mode,
+  en_playback,
+  en_graphics,
+  graphics_swap_toggle,
+  replay_toggle,
   // Video Upstream Interface
   v_burst_avail,
   v_rd_en,
   v_rd_data,
+  // Graphics Upstream Interface
+  gr_wr_base,
+  gr_wr_base_rd,
+  gr_wr_base_vld,
+  gr_burst_avail,
+  gr_rd_en,
+  gr_rd_data,
   // Audio Upstream Interface
   a_burst_avail,
   a_rd_en,
@@ -57,12 +68,12 @@ module arbiter (
   cfifo_wr_data,
   dbg_mrb_err
 );
-  
-  
+
+
   //  `include "apsaram_param.v"
   //`include "./../synth_mk9b/src/apm256/apsram_param.v"
   //`include "./../synth_mk9b/src/apm256/apsram_local_param.v"
-  
+
   parameter MEM_SIZE               = 32 * 1024 * 1024;
   parameter DQ_WIDTH               = 8;//8,16,...
   parameter PSRAM_WIDTH            = 8;//8,16
@@ -81,7 +92,11 @@ module arbiter (
   localparam  RWDS_WIDTH = DQ_WIDTH/PSRAM_WIDTH;
   localparam  CS_WIDTH   = DQ_WIDTH/PSRAM_WIDTH;
   localparam  MASK_WIDTH = (4*DQ_WIDTH)/(PSRAM_WIDTH*CS_WIDTH);
-  
+
+  localparam integer GR_BUF_SZ = 2 * `FRAME_LENGTH;
+  localparam integer GR_BUF_BASEADDR0 = MEM_SIZE - GR_BUF_SZ;
+  localparam integer GR_BUF_BASEADDR1 = GR_BUF_BASEADDR0 + `FRAME_LENGTH;
+
   // Camera Interface
   input  wire                       rst;
   input  wire                       clk;
@@ -97,6 +112,10 @@ module arbiter (
   input  wire                       en_zoom;
   input  wire                       en_luma_cor;
   input  wire [1:0]                 sel_zoom_mode;
+  input  wire                       en_playback;
+  input  wire                       en_graphics;
+  input  wire 			    graphics_swap_toggle;
+  input  wire 			    replay_toggle;
   // Video Upstream Interface
   input  wire                       v_burst_avail;
   output reg                        v_rd_en;
@@ -105,6 +124,13 @@ module arbiter (
   input  wire                       a_burst_avail;
   output reg                        a_rd_en;
   input  wire [`DSIZE-1:0]          a_rd_data;
+  // Graphics Upstream Interface
+  input wire		            gr_wr_base_vld;
+  input wire [31:0]		    gr_wr_base;
+  output wire		            gr_wr_base_rd;
+  input  wire                       gr_burst_avail;
+  output reg                        gr_rd_en;
+  input  wire [`DSIZE-1:0]          gr_rd_data;
   // Memory Interface
   output reg  [ADDR_WIDTH-1:0]      mem_addr;
   output reg                        mem_cmd; //1-Wr 0-Rd
@@ -137,9 +163,9 @@ module arbiter (
   output wire                       cfifo_wr_en;
   output wire [`DSIZE-1:0]          cfifo_wr_data;
   output wire                       dbg_mrb_err;
-  
+
   //output reg                        wfifo_full_err/* synthesis syn_keep=1 */;
-    
+
   // Local Parameters
   localparam  WR_IDLE             = 10'b00_0000_0001;
   localparam  WR_BURST            = 10'b00_0000_0010;
@@ -147,12 +173,10 @@ module arbiter (
   localparam  RD_BURST            = 10'b00_0000_1000;
   localparam  FRM_CAPT            = 10'b00_0001_0000;
   localparam  AUDIO_WR_BURST      = 10'b00_0010_0000;
-  localparam  CAPT_RD_IDLE        = 10'b00_0100_0000;
-  
-  localparam  BUF_CNTR_WIDTH      = $clog2(`TOTAL_BUF);
-  //localparam  BURST_CNTR_WIDTH    = $clog2(`BURST_LEN)+1; //+1 for Read burst only
+  localparam  GR_WR_BURST         = 10'b00_0100_0000;
+  localparam  CAPT_RD_IDLE        = 10'b00_1000_0000;
+
   localparam  BURST_CNTR_WIDTH    = $clog2(`MEM_WR_BL>`MEM_RD_BL ? `MEM_WR_BL : `MEM_RD_BL)+1; //+1 for Read burst only
-  localparam  BUF_ADDR_WIDTH      = $clog2(MEM_SIZE/(`TOTAL_BUF+1)); //+1 for audio
   localparam  FNUM_WIDTH          = $clog2(`MAX_TOTAL_FRM);
 
   // Internal Signals
@@ -163,7 +187,8 @@ module arbiter (
   wire                              o_rd_sob;
   wire                              o_rd_eob;
   wire                              o_rd_sof;
-  wire                              o_rd_eof;  
+  wire                              o_rd_eof;
+  wire                              o_rd_end_replay;
   wire                              c_rd_sob;
   wire                              c_rd_eob;
   wire                              c_rd_sof;
@@ -180,6 +205,7 @@ module arbiter (
   wire [ADDR_WIDTH-1:0]             o_maddr_d1;
   wire [ADDR_WIDTH-1:0]             c_maddr_d1;
   wire [ADDR_WIDTH-1:0]             a_maddr_d1;
+  reg [ADDR_WIDTH-1:0]              gr_maddr_d1;
   reg                               capt_en_d1;
   reg                               capt_en_d2;
   reg                               capt_en_d3;
@@ -214,6 +240,7 @@ module arbiter (
   wire                              capt_rd_audio;
   reg                               lch_c_rd_buf_done;
   wire                              a_rd_en_nxt;
+  wire                              gr_rd_en_nxt;
   wire                              capt_rd_audio_sync;
   reg                               capt_rd_audio_d1;
   wire                              audio_only_capt;
@@ -227,18 +254,19 @@ module arbiter (
   reg  [FNUM_WIDTH-1:0]             n_top_fnum;
   wire [FNUM_WIDTH-1:0]             n_w_fnum;
   wire [FNUM_WIDTH-1:0]             n2n_w_fnum;
-  reg  [FNUM_WIDTH-1:0]             w_head_fnum;
-  reg                               w_tail_frm; 
+  reg                               w_tail_frm;
   reg  [ADDR_WIDTH-1:0]             w_sof_maddr;
   reg  [ADDR_WIDTH-1:0]             w_top_maddr;
   reg  [ADDR_WIDTH-1:0]             n_top_maddr;
-  wire [ADDR_WIDTH:0]               free_mem_bytes;
-  wire [ADDR_WIDTH:0]               max_buf_size;
-  wire                              mem_has_free_buf;
+  reg  [ADDR_WIDTH-1:0]             gr_sof_maddr;
+  reg  [ADDR_WIDTH-1:0]             gr_back_maddr;
+  wire                              wr_gr_sof;
   wire [71:0]                       fcq_wdata;
   wire [3:0]                        o_zoom_ctrl;
   wire [3:0]                        c_zoom_ctrl;
-  reg  [FNUM_WIDTH-1:0]             w_fnum;
+  reg  [FNUM_WIDTH-1:0]             w_cur_fnum;
+  reg  [FNUM_WIDTH-1:0]             w_first_fnum;
+  reg  [FNUM_WIDTH-1:0]             w_last_fnum;
   wire                              c_buf_avail;
   wire                              capt_avail;
   wire                              c_bcq_tob_pulse;
@@ -256,6 +284,29 @@ module arbiter (
   reg  [1:0]                        sel_zoom_mode_d1;
   reg  [1:0]                        sel_zoom_mode_sync;
   wire [3:0]                        w_zoom_ctrl;
+  reg                               en_playback_d1;
+  reg                               en_playback_sync;
+  reg                               en_playback_sync_d1;
+  wire                              playback_stop;
+  reg                               replay_toggle_d1;
+  reg                               replay_toggle_sync;
+  reg                               replay_toggle_sync_d1;
+  reg 				    replay_mode; 
+  reg 				    replay_mode_d1; 
+  wire                              replay_start;
+  reg                               en_graphics_d1;
+  reg                               en_graphics_sync;
+  reg                               en_graphics_sync_d1;
+  reg                               graphics_swap_toggle_d1;
+  reg                               graphics_swap_toggle_sync;
+  reg                               graphics_swap_toggle_sync_d1;
+  reg                               graphics_disp_buf;
+  wire                              graphics_start;
+  reg                               graphics_start_d1;
+  wire                              graphics_stop;
+  wire                              graphics_swap;
+  reg                               graphics_swap_d1;
+  reg                               graphics_swap_d2;
   wire                              o_mem_rd_cmd;
   wire                              c_mem_rd_cmd;
   wire                              o_rd_frm_done;
@@ -275,16 +326,16 @@ module arbiter (
   wire                              fcq_wr_en;
   reg                               wait_for_resume;
 
-  
-  
-  
+
+
+
   //================================================
   // Extract Sideband
   //================================================
   assign wr_sof  = v_rd_en & v_rd_data[32];
   assign wr_eof  = v_rd_en & v_rd_data[33];
-  
-  
+
+
   //// Derive sideband information
   //reg [16:0] frm_burst_cnt;
   //always@(posedge clk) begin
@@ -296,7 +347,7 @@ module arbiter (
   //
   //assign wr_sof = frm_burst_cnt == 0 ? 1'b1 : 1'b0;
   //assign wr_eof = frm_burst_cnt == (`FRAME_LENGTH>>2)-1 ? 1'b1 : 1'b0;
-  
+
   // Frame Length Counter
   always@(posedge clk) begin
     if(rst || wr_eof) begin
@@ -305,7 +356,7 @@ module arbiter (
       w_frm_len <= w_frm_len + 23'd4;
     end
   end
-  
+
   // In progress frame-write
   always@(posedge clk) begin
     if(rst || wr_eof) begin
@@ -319,7 +370,7 @@ module arbiter (
   // Circular buffer control
   //================================================
   always@(posedge clk) begin
-    if(rst) begin
+    if(rst | graphics_start) begin
       w_frm_cntr <= 9'd0;
     end else if(wr_eof) begin
       if (w_bot_frm || w_tail_frm || send_wr_to_tob) begin
@@ -329,17 +380,19 @@ module arbiter (
       end
     end
   end
-  
+
   assign buf_size_tsh = capturing_frm ? 9'd1 : `MAX_FRM_PER_BUF;
 
   assign w_top_frm = w_frm_cntr == 9'b0 ? 1'd1 : 1'b0;
   assign w_bot_frm = (!lch_frm_capt_en && w_frm_cntr == (buf_size_tsh - 1)) ? 1'd1 : 1'b0;
-  
+
   always@(posedge clk) begin
     if(rst) begin
       w_sof_maddr <= {ADDR_WIDTH{1'b0}};
     end else if(wr_sof) begin
       w_sof_maddr <= w_maddr_d1;
+    end else if(wr_gr_sof) begin
+      w_sof_maddr <= gr_sof_maddr;
     end
   end
 
@@ -349,10 +402,10 @@ module arbiter (
       w_top_fnum <= 9'd0;
     end else if(w_top_frm && wr_sof) begin
       w_top_maddr <= w_maddr_d1;
-      w_top_fnum <= w_fnum;
+      w_top_fnum <= w_cur_fnum;
     end
   end
-  
+
   // Latch Next buffer Top when we see bottom of buffer
   always@(posedge clk) begin
     if(rst) begin
@@ -364,7 +417,7 @@ module arbiter (
       n_top_fnum <= n_w_fnum;
     end
   end
-  
+
   // Check for incomplete buffer
   always@(posedge clk) begin
     if(rst) begin
@@ -377,70 +430,77 @@ module arbiter (
       end
     end
   end
-  
-  assign free_mem_bytes = MEM_SIZE - n_top_maddr;
-  assign max_buf_size = frm_capt_sel_sync ? (`HIGH_RES_FL>>2) : `MAX_FRM_PER_BUF*(`FRAME_LENGTH>>2); // >>2 is a compression ratio 1/4
-  assign mem_has_free_buf = 1'b1;//free_mem_bytes >= max_buf_size ? 1'b1 : 1'b0;
-  
+
   // Not set for full frame
   // Check if mem has available free buffer, otherwise keep overwritting the current buf
   always @(posedge clk) begin
     if (rst) begin
       w_tail_frm <= 1'b0;
     end else begin
-      if (wr_eof) begin
+      if (wr_eof | wr_gr_sof) begin
         w_tail_frm <= 1'b0;
       end else if ((video_capt_sel_sync && capt_en_re) || capturing_frm) begin
         w_tail_frm <= 1'b1;
       end
     end
   end
-  
-  assign n_w_fnum = w_fnum + 9'd1;
-  assign n2n_w_fnum = w_fnum + 9'd2;
-  
+
+  assign n_w_fnum = w_cur_fnum + 1;
+  assign n2n_w_fnum = w_cur_fnum + 2;
+
   always @(posedge clk) begin
-    if (rst) begin
-      w_head_fnum <= 9'b0;
-    end else if (w_tail_frm && wr_eof) begin
-      if (!capturing_frm && buf_full && w_frm_cntr < `MAX_FRM_PER_BUF-2) begin  // 2nd last frame? Then go to top
-        w_head_fnum <= n2n_w_fnum;
-      end else begin
-        w_head_fnum <= w_top_fnum;
-      end
+    if (rst | graphics_start) begin
+      w_last_fnum <= 0;
+    end else if (wr_eof) begin
+       w_last_fnum <= w_cur_fnum;
     end
   end
+
+  always @(posedge clk) begin
+    if (rst | graphics_start) begin
+      w_first_fnum <= 0;
+    end else if (wr_sof) begin
+       if (w_cur_fnum == w_first_fnum) // about to overwrite oldest frame
+	 w_first_fnum <= w_bot_frm ? w_top_fnum : n_w_fnum;
+    end
+  end
+
   /////// Start of buffer frame number
   /////assign w_head_fnum = (w_bot_frm || !buf_full) ? w_top_fnum :    //Top of buffer when Rollover Or when capturing incomplete buffer
-  /////                                                ((n_w_fnum + 9'd1) >= ? );//Next2Next write buffer, this is to be safe side so that 
+  /////                                                ((n_w_fnum + 9'd1) >= ? );//Next2Next write buffer, this is to be safe side so that
   /////                                                                //buffer won't start from overwritten incomplete frame.
   /////                                                                //This is with assumption that in worst case compression is done with 1/2 ratio
 
   assign w_zoom_ctrl = {en_luma_cor_sync, en_zoom_sync, sel_zoom_mode_sync};
 
-  assign fcq_wr_en = (!wait_for_resume && wr_eof) ? 1'b1 : 1'b0;
+  ///// FCQ & BCQ
+  // At the end of the camera stream frame (wr_eof), FCQ is written @ w_cur_fnum address, and w_head_fnum set to w_cur_fnum
+  // Next cycle, BCQ is written with w_last_fnum which is now the last frame received from the camera.
+
+  wire gr_fcq_wr_en;
+   
+  assign gr_fcq_wr_en = graphics_start_d1 | graphics_swap_d2;
+   
+  assign fcq_wr_en = gr_fcq_wr_en ? 1'b1 : (!wait_for_resume && wr_eof) ? 1'b1 : 1'b0;
+
+  wire [`FL_WIDTH-1:0] w_fcq_frm_len;
   
-  assign fcq_wdata = {
-                      `ifdef MK11
-                      16'b0,       // [56+:17]Reserved
-                      `else
-                      17'b0,       // [55+:17]Reserved
-                      `endif
-                      w_sof_maddr, // [30+:ADDR_WIDTH]
-                      w_zoom_ctrl, // [26+:4]
-                      w_frm_len,   // [2+:`FL_WIDTH]
-                      w_tail_frm,  // [1+:1]
-                      w_bot_frm};  // [0+:1]
-                      
-  assign bcq_wdata = {51'b0,               // [21+:51]Reserved
-                      video_capt_sel_sync, // [20+:1]
-                      frm_capt_sel_sync,   // [19+:1]
-                      audio_capt_sel_sync, // [18+:1]
-                      w_head_fnum,         // [9+:FNUM_WIDTH]
-                      w_top_fnum};         // [0+:FNUM_WIDTH]  
-  
-  assign bcq_wr_en_c = w_tail_frm & wr_eof;
-  assign bcq_wr_en_o = w_tail_frm & wr_eof;
+  assign w_fcq_frm_len = gr_fcq_wr_en ? `FRAME_LENGTH : w_frm_len;
+   
+  assign fcq_wdata[ADDR_WIDTH+4+`FL_WIDTH+2-1:0] = {w_sof_maddr,
+						    w_zoom_ctrl,
+						    w_fcq_frm_len,
+						    w_tail_frm,
+						    w_bot_frm};
+
+  assign bcq_wdata[3+FNUM_WIDTH+FNUM_WIDTH-1:0] = {replay_mode,
+						   frm_capt_sel_sync,
+						   audio_capt_sel_sync,
+						   w_last_fnum,
+						   w_first_fnum};
+
+  assign bcq_wr_en_c = wr_eof;
+  assign bcq_wr_en_o = en_playback_sync & ((wr_eof & ~replay_mode) | replay_start);
 
   // Synchronize BCQ write enable with latched write data
   always @(posedge clk) begin
@@ -464,7 +524,7 @@ module arbiter (
       c_state <= n_state;
     end
   end
-  
+
   // Combinational block
   always @(*) begin
     case (c_state)
@@ -472,6 +532,8 @@ module arbiter (
         if (mem_cmd_rdy) begin
           if (a_burst_avail) begin
             n_state = AUDIO_WR_BURST;
+          end else if (gr_burst_avail) begin
+            n_state = GR_WR_BURST;
           end else if (v_burst_avail) begin
             n_state = WR_BURST;
           end else if (disp_avail) begin
@@ -484,8 +546,8 @@ module arbiter (
         end else begin
           n_state = WR_IDLE;
         end
-      
-      AUDIO_WR_BURST: 
+
+      AUDIO_WR_BURST:
         if (eob_wr) begin
           if (disp_avail) begin
             n_state = RD_IDLE;
@@ -495,8 +557,20 @@ module arbiter (
         end else begin
           n_state = AUDIO_WR_BURST;
         end
-      
-      WR_BURST: 
+
+
+      GR_WR_BURST:
+        if (eob_wr) begin
+          if (disp_avail) begin
+            n_state = RD_IDLE;
+          end else begin
+            n_state = WR_IDLE;
+          end
+        end else begin
+          n_state = GR_WR_BURST;
+        end
+
+      WR_BURST:
         if (eob_wr) begin
           if (disp_avail) begin
             n_state = RD_IDLE;
@@ -506,7 +580,7 @@ module arbiter (
         end else begin
           n_state = WR_BURST;
         end
-  
+
       RD_IDLE:
         if (mem_cmd_rdy) begin
           if (!rfifo_full) begin
@@ -517,7 +591,7 @@ module arbiter (
         end else begin
           n_state = RD_IDLE;
         end
-       
+
       RD_BURST:
         if (eob_rd) begin
             n_state = CAPT_RD_IDLE;
@@ -529,8 +603,8 @@ module arbiter (
         end else begin
           n_state = RD_BURST;
         end
-        
-      CAPT_RD_IDLE: 
+
+      CAPT_RD_IDLE:
         if (mem_cmd_rdy) begin
           if ((!cfifo_afull) & capt_avail) begin
             n_state = FRM_CAPT;
@@ -540,39 +614,40 @@ module arbiter (
         end else begin
           n_state = CAPT_RD_IDLE;
         end
-      
-      FRM_CAPT: 
+
+      FRM_CAPT:
         if (eob_rd) begin
           n_state = WR_IDLE;
         end else begin
           n_state = FRM_CAPT;
         end
-            
+
       default: n_state = WR_IDLE;
     endcase
   end
-  
+
   assign rd_en_nxt = c_state == WR_BURST ? 1'b1 : 1'b0;
   assign a_rd_en_nxt = c_state == AUDIO_WR_BURST ? 1'b1 : 1'b0;
-  
+  assign gr_rd_en_nxt = c_state == GR_WR_BURST ? 1'b1 : 1'b0;
+
   always @(posedge clk) begin
     v_rd_en <= rd_en_nxt;
     a_rd_en <= a_rd_en_nxt;
+    gr_rd_en <= gr_rd_en_nxt;
   end
-  
-  
-  
+
+
+
   //================================================
   // Burst Counters
   //================================================
-  assign burst_len = (c_state == WR_BURST | c_state == AUDIO_WR_BURST) ? `MEM_WR_BL : //Write
-                                                                         `MEM_RD_BL;  //Read
-                                                                             
+  assign burst_len = (c_state == WR_BURST || GR_WR_BURST || c_state == AUDIO_WR_BURST) ? `MEM_WR_BL : `MEM_RD_BL;
+
   // Read/Write burst counter
   always @(posedge clk) begin
     if (rst) begin
       burst_cntr <= {BURST_CNTR_WIDTH{1'b0}};
-    end else if (!eob_rd && (c_state == WR_BURST || c_state == AUDIO_WR_BURST || c_state == RD_BURST || c_state == FRM_CAPT)) begin
+    end else if (!eob_rd && (c_state == WR_BURST || c_state == GR_WR_BURST || c_state == AUDIO_WR_BURST || c_state == RD_BURST || c_state == FRM_CAPT)) begin
       if (burst_cntr < mem_burst_num) begin
         burst_cntr <= burst_cntr + 1;
       end
@@ -580,7 +655,7 @@ module arbiter (
       burst_cntr <= {BURST_CNTR_WIDTH{1'b0}};
     end
   end
-  
+
   always @(posedge clk) begin
     if (rst) begin
       rd_burst_cntr <= {BURST_CNTR_WIDTH{1'b0}};
@@ -590,18 +665,18 @@ module arbiter (
       rd_burst_cntr <= {BURST_CNTR_WIDTH{1'b0}};
     end
   end
-  
+
   assign eob_wr = burst_cntr    == `MEM_WR_BL-1 ? 1'b1 : 1'b0;
   assign eob_rd = rd_burst_cntr == `MEM_RD_BL-1 ? 1'b1 : 1'b0;
-  
-  
-  
+
+
+
   //================================================
   // Memory Write Address
   //================================================
   // Write Buffer Address
   always @(posedge clk) begin
-    if (rst) begin
+    if (rst | graphics_start) begin
       w_maddr <= 'd0;
     //end else if(c_state == WR_BURST) begin
     //** NOTE: For non-burst aligned frame lengths, wr_eof must be replaced with correct end of frame
@@ -620,29 +695,28 @@ module arbiter (
   always @(posedge clk) begin
     w_maddr_d1 <= w_maddr;
   end
-  
+
   assign a_maddr_d1 = {ADDR_WIDTH{1'b1}};
-  
+
   // Memory Write Address
-  assign waddr_i = w_maddr_d1;
-  //assign waddr_i = c_state == AUDIO_WR_BURST ? a_maddr_d1 :
-  //                                             w_maddr_d1;
-  
+  assign waddr_i = c_state == GR_WR_BURST ? gr_maddr_d1 :
+                                            w_maddr_d1;
+
   // Write Frame counter
   always @(posedge clk) begin
-    if (rst) begin
-      w_fnum <= {FNUM_WIDTH{1'b0}};
+    if (rst | graphics_start) begin
+      w_cur_fnum <= {FNUM_WIDTH{1'b0}};
     //end else if(c_state == WR_BURST) begin
       //** NOTE: For non-burst aligned frame lengths, wr_eof must be replaced with correct end of frame
     end else if (wr_eof) begin
       if (wait_for_resume || (!w_tail_frm && (w_bot_frm || send_wr_to_tob))) begin  //Rollover -back to start of the buffer
-        w_fnum <= w_top_fnum;
+        w_cur_fnum <= w_top_fnum;
       end else if (capturing_frm) begin // This is frame capture, so next buf top is cur+1
-        w_fnum <= n_w_fnum;
+        w_cur_fnum <= n_w_fnum;
       end else if (buf_full && w_tail_frm) begin // Current full buf captured, move to next buf top
-        w_fnum <= n_top_fnum;
+        w_cur_fnum <= n_top_fnum;
       end else begin
-        w_fnum <= n_w_fnum;
+        w_cur_fnum <= n_w_fnum;
       end
     end
   end
@@ -657,16 +731,21 @@ module arbiter (
 
   assign rfifo_wr_en   = o_mem_rd_vld;
   assign rfifo_wr_data = {2'b00, o_rd_eof, o_rd_sof, mem_rd_data};
-  
+
+  wire oled_rd_rst;
+   
+  assign oled_rd_rst = rst | graphics_stop | playback_stop;
+   
   mem_rd_ctrl #(
     .CAPT_CNTRL_SEL       (0),
     .ADDR_WIDTH           (ADDR_WIDTH),
     .FNUM_WIDTH           (FNUM_WIDTH)
   ) i_mem_rd_ctrl_oled (
-    .rst                  (rst),
+    .rst                  (oled_rd_rst),
     .clk                  (clk),
+    .graphics_mode        (en_graphics_sync),
     .rpt_rate_ctrl        (rep_rate_control),
-    .fcq_wr_addr          (w_fnum),
+    .fcq_wr_addr          (w_cur_fnum),
     .fcq_wr_en            (fcq_wr_en),
     .fcq_wdata            (fcq_wdata),
     .fcq_rd_en            (o_rd_frm_done),
@@ -694,17 +773,18 @@ module arbiter (
     .rd_eob               (),
     .rd_sof               (o_rd_sof),
     .rd_eof               (o_rd_eof),
-	.dbg_mrb_err          (dbg_mrb_err)
+    .rd_end_replay        (o_rd_end_replay),
+    .dbg_mrb_err          (dbg_mrb_err)
   );
   assign disp_avail = o_buf_avail;// || (lch_disp_cam && o_frm_avail);
 
   assign c_mem_rd_cmd = burst_cntr == 'd0 && c_state == FRM_CAPT ? 1'b1 : 1'b0;
   assign c_mem_rd_vld  = (c_state == FRM_CAPT) & mem_rd_data_valid ? 1'b1 : 1'b0;
   assign c_rd_frm_done = c_mem_rd_vld && c_rd_eof ? 1'b1 : 1'b0;
-  
+
   assign cfifo_wr_en   = c_mem_rd_vld;
   assign cfifo_wr_data = {c_rd_eob, c_rd_sob, c_rd_eof, c_rd_sof, mem_rd_data};
-  
+
   mem_rd_ctrl #(
     .CAPT_CNTRL_SEL       (1),
     .ADDR_WIDTH           (ADDR_WIDTH),
@@ -712,8 +792,9 @@ module arbiter (
   ) i_mem_rd_ctrl_capt (
     .rst                  (rst),
     .clk                  (clk),
+    .graphics_mode        (1'b0),
     .rpt_rate_ctrl        (5'd1),
-    .fcq_wr_addr          (w_fnum),
+    .fcq_wr_addr          (w_cur_fnum),
     .fcq_wr_en            (fcq_wr_en),
     .fcq_wdata            (fcq_wdata),
     .fcq_rd_en            (c_rd_frm_done),
@@ -741,16 +822,17 @@ module arbiter (
     .rd_eob               (c_rd_eob),
     .rd_sof               (c_rd_sof),
     .rd_eof               (c_rd_eof),
-	.dbg_mrb_err          ()
+    .rd_end_replay        (),
+    .dbg_mrb_err          ()
   );
   assign capt_avail = c_buf_avail;// && ble_en_sync; //ble_en_sync=If BLE is not connected and MCU need to discard the captured buffer,
                                                      //            then MCU need to inform FPGA in advance. This is to know whether start
                                                      //            buffering the captured buffer data into local buffer or not.
-  
+
   assign c_sel_zoom_mode = c_zoom_ctrl[1:0];
   assign c_en_zoom       = c_zoom_ctrl[2];// & dbg_mrb_err; // Remove dbg_mrb_err after Testing
   assign c_en_luma_cor   = c_zoom_ctrl[3];
-  
+
   always @(posedge clk) begin
     if (rst) begin
       lch_c_rd_buf_done <= 1'b0;
@@ -762,15 +844,15 @@ module arbiter (
       end
     end
   end
-  
+
   assign raddr_i = c_state == FRM_CAPT ? c_maddr_d1 : /*(capt_rd_audio_sync ? a_maddr_d1 :  // Audio capture read
                                                                c_maddr_d1) :*/ // Video capture read
                                          o_maddr_d1;
-  
 
-  
+
+
   assign zoom_rd_ctrl = {32'b0, o_zoom_ctrl};
-  
+
   // Need to latch control information at Arbiter SOF to compensate latency between Arbiter and Luma/Zoom
   always @(posedge clk) begin
     if (rst) begin
@@ -781,7 +863,7 @@ module arbiter (
       end
     end
   end
-  
+
   // Latch again on Luma/Zoom EOF
   always @(posedge clk) begin
     if (rst) begin
@@ -793,8 +875,8 @@ module arbiter (
     end
   end
 
-  
-  
+
+
   //================================================
   // Memory Control
   //================================================
@@ -806,20 +888,20 @@ module arbiter (
       mem_wr_en       <= 1'b0;
       //mem_wr_data     <=  'b0;
       mem_data_mask   <=  'b0;
-    end else if ((burst_cntr == 'd0) && (c_state == WR_BURST | c_state == AUDIO_WR_BURST)) begin
+    end else if ((burst_cntr == 'd0) && (c_state == WR_BURST | c_state == GR_WR_BURST | c_state == AUDIO_WR_BURST)) begin
       mem_cmd         <= 1'b1;
       mem_cmd_en      <= 1'b1;
       mem_addr        <= waddr_i[ADDR_WIDTH-1:0];
       mem_wr_en       <= 1'b1;
-      //mem_wr_data     <= v_rd_data;              
+      //mem_wr_data     <= v_rd_data;
       mem_data_mask   <=  'b0;
-    end else if ((burst_cntr !== 'd0) && (c_state == WR_BURST | c_state == AUDIO_WR_BURST)) begin
+    end else if ((burst_cntr !== 'd0) && (c_state == WR_BURST | c_state == GR_WR_BURST | c_state == AUDIO_WR_BURST)) begin
       mem_cmd         <= 1'b0;
       mem_cmd_en      <= 1'b0;
       mem_addr        <=  'b0;
       mem_wr_en       <= 1'b1;
-      //mem_wr_data     <= v_rd_data;              
-      mem_data_mask   <=  'b0; 
+      //mem_wr_data     <= v_rd_data;
+      mem_data_mask   <=  'b0;
     end else if ((burst_cntr == 'd0) && (c_state == RD_BURST | c_state == FRM_CAPT)) begin
       mem_cmd         <= 1'b0;
       mem_cmd_en      <= 1'b1;
@@ -835,9 +917,10 @@ module arbiter (
       mem_data_mask   <=  'b0;
     end
   end
-  
-  assign mem_wr_data   = a_rd_en ? a_rd_data : v_rd_data;
+
+  assign mem_wr_data   = a_rd_en ? a_rd_data : gr_rd_en ? gr_rd_data : v_rd_data;
   assign mem_burst_num = burst_len-1;
+
   //assign mem_burst_num = `BURST_LEN-1;
 
   //================================================
@@ -856,7 +939,7 @@ module arbiter (
       capt_en_d4 <= capt_en_d3;
     end
   end
-  
+
   // Rising edge detection
   assign capt_en_re = (!capt_en_d4) & capt_en_d3;
 
@@ -879,17 +962,17 @@ module arbiter (
       disc_cbuf_d4 <= disc_cbuf_d3;
     end
   end
-  
+
   // Rising edge detection
   assign disc_cbuf_re = (!disc_cbuf_d4) & disc_cbuf_d3;
 
   always @(posedge clk) begin
     frm_capt_sel_d1   <= frm_capt_sel;
     frm_capt_sel_sync <= frm_capt_sel_d1;
-    
+
     video_capt_sel_d1   <= video_capt_sel;
     video_capt_sel_sync <= video_capt_sel_d1;
-    
+
     audio_capt_sel_d1   <= audio_capt_sel;
     audio_capt_sel_sync <= audio_capt_sel_d1;
 
@@ -899,18 +982,67 @@ module arbiter (
 
   assign audio_only_capt = !video_capt_sel_sync && audio_capt_sel_sync;
   assign capt_rd_audio_sync = (audio_only_capt || (!audio_only_capt && lch_c_rd_buf_done)) ? 1'b1 : 1'b0;
-  
+
   always @(posedge clk) begin
     en_zoom_d1   <= en_zoom;
     en_zoom_sync <= en_zoom_d1;
-    
+
     en_luma_cor_d1   <= en_luma_cor;
     en_luma_cor_sync <= en_luma_cor_d1;
-    
+
     sel_zoom_mode_d1   <= sel_zoom_mode;
     sel_zoom_mode_sync <= sel_zoom_mode_d1;
+     
+    en_playback_d1 <= en_playback;
+    en_playback_sync <= en_playback_d1;
+    en_playback_sync_d1 <= en_playback_sync;
+
+    replay_toggle_d1 <= replay_toggle;
+    replay_toggle_sync <= replay_toggle_d1;
+    replay_toggle_sync_d1 <= replay_toggle_sync;
+     
+    en_graphics_d1 <= en_graphics;
+    en_graphics_sync <= en_graphics_d1;
+    en_graphics_sync_d1 <= en_graphics_sync;
+
+    graphics_swap_toggle_d1 <= graphics_swap_toggle;
+    graphics_swap_toggle_sync <= graphics_swap_toggle_d1;
+    graphics_swap_toggle_sync_d1 <= graphics_swap_toggle_sync;
   end
-    
+
+  assign playback_stop = ~en_playback_sync & en_playback_sync_d1;
+   
+  always @(posedge clk)
+    if (rst || o_rd_end_replay)
+      replay_mode <= 1'b0;
+    else if (replay_toggle_sync != replay_toggle_sync_d1)
+      replay_mode <= 1'b1;
+
+  always @(posedge clk)
+    replay_mode_d1 <= replay_mode;
+
+  assign replay_start = replay_mode & ~replay_mode_d1;
+   
+  assign graphics_start = en_graphics_sync & ~en_graphics_sync_d1;
+  assign graphics_stop = ~en_graphics_sync & en_graphics_sync_d1;
+  assign graphics_swap = (graphics_swap_toggle_sync != graphics_swap_toggle_sync_d1);
+
+  always @(posedge clk)
+    if (rst)
+      graphics_start_d1 <= 1'b0;
+    else
+      graphics_start_d1 <= graphics_start;
+
+  always @(posedge clk) begin
+    if (rst) begin
+       graphics_swap_d1 <= 1'b0;
+       graphics_swap_d2 <= 1'b0;
+    end else begin
+       graphics_swap_d1 <= graphics_swap;
+       graphics_swap_d2 <= graphics_swap_d1;
+    end
+  end
+   
 //  // Capture Read Control
 //  always @(posedge clk) begin
 //    if (rst) begin
@@ -921,7 +1053,7 @@ module arbiter (
 //      capt_rd_audio_sync <= capt_rd_audio_d1;
 //    end
 //  end
-      
+
   always @(posedge clk) begin
     if (rst) begin
       resume_fill_d1 <= 1'b0;
@@ -933,9 +1065,35 @@ module arbiter (
       resume_fill_d3 <= resume_fill_d2;
     end
   end
-
+   
   // Rising edge detection
   assign resume_fill_re = (!resume_fill_d3) & resume_fill_d2;
+
+   ////////// Graphics display control
+
+   always @(posedge clk)
+     if (rst)
+       graphics_disp_buf <= 1'b0;
+     else if (graphics_swap)
+       graphics_disp_buf <= ~graphics_disp_buf;
+
+   assign gr_back_maddr = (graphics_disp_buf == 1'b0) ? GR_BUF_BASEADDR1 : GR_BUF_BASEADDR0;
+
+   always @(posedge clk)
+     if (rst)
+       gr_sof_maddr <= GR_BUF_BASEADDR0;
+     else if (graphics_swap)
+       gr_sof_maddr <= gr_back_maddr;
+
+   always @(posedge clk)
+     if (gr_wr_base_vld)
+       gr_maddr_d1 <= gr_back_maddr + gr_wr_base[ADDR_WIDTH-1:0];
+     else if (c_state == GR_WR_BURST && eob_wr)
+       gr_maddr_d1 <= gr_maddr_d1 + (`MEM_WR_BL<<2);
+
+   assign gr_wr_base_rd = gr_wr_base_vld;
+
+   assign wr_gr_sof = graphics_start | graphics_swap_d1;
 
 //  // Latch dispaly camera using read EOF
 //  always @(posedge clk) begin
@@ -949,7 +1107,7 @@ module arbiter (
 //      lch_disp_cam <= disp_cam_sync;
 //    end
 //  end
- 
+
   // Discard frames if its not top capture frame
   always @(posedge clk) begin
     if (rst) begin
@@ -959,7 +1117,7 @@ module arbiter (
         lch_frm_capt_en <= 1'b1;
       end else if (w_top_frm && wr_eof) begin
         lch_frm_capt_en <= 1'b0;
-      end 
+      end
     end
   end
 
@@ -978,7 +1136,7 @@ module arbiter (
       end
     end
   end
-  
+
   // OLED Buffer Discard
   always @(posedge clk) begin
     if (rst) begin
@@ -991,7 +1149,7 @@ module arbiter (
       end
     end
   end
-  
+
   // Freeze Write after capture and before resume
   always @(posedge clk) begin
     if (rst) begin
@@ -1004,7 +1162,7 @@ module arbiter (
       end
     end
   end
-   
+
 //  reg dbg_mrb_err/* synthesis syn_keep=1 */;
 //  // Only for debug
 //  always @(posedge clk) begin
@@ -1014,6 +1172,6 @@ module arbiter (
 //	  dbg_mrb_err <= 1'b1;
 //	end
 //  end
-  
+
 endmodule
 `default_nettype wire

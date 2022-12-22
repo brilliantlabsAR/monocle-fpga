@@ -26,6 +26,8 @@
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo/fifo_fwft_adapter.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo/simple_dpram_sclk.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/afifo_fwft_36x512.v" type="file.verilog" enable="1"/>
+        <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/afifo_fwft_w16r32x512.v" type="file.verilog" enable="1"/>
+        <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/dist_afifo_fwft_32x8.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/fifo_fwft_18x1024.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/fifo_fwft_18x2048.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/fifo_top/fifo_fwft_36x512.v" type="file.verilog" enable="1"/>
@@ -35,6 +37,7 @@
         <File path="D:/brilliant/monocle/monocle-fpga/src/gowin_rpll/disp_pll.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/gowin_rpll/mem_pll.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/gowin_rpll/onchip_osc.v" type="file.verilog" enable="1"/>
+        <File path="D:/brilliant/monocle/monocle-fpga/src/gr_wr_burst_afifo.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/luma_correction.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/mem_rd_ctrl.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/mic_clk_gen.v" type="file.verilog" enable="0"/>
@@ -53,7 +56,7 @@
         <File path="D:/brilliant/monocle/monocle-fpga/src/stream_upsizer.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/wr_burst_afifo.v" type="file.verilog" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/zoom.v" type="file.verilog" enable="1"/>
-        <File path="D:/brilliant/monocle/monocle-fpga/src/moncole_api.vhd" type="file.vhdl" enable="1"/>
+        <File path="D:/brilliant/monocle/monocle-fpga/src/monocle_api.vhd" type="file.vhdl" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/apsram_top.vo" type="file.netlist" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/mk11_pins.cst" type="file.cst" enable="1"/>
         <File path="D:/brilliant/monocle/monocle-fpga/src/timing/timings_40mhz.sdc" type="file.sdc" enable="1"/>

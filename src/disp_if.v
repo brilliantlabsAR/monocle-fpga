@@ -82,6 +82,7 @@ module disp_if (
   wire                              vsync_n_fe;
   wire                              en_lch_disp_on;
   wire                              en_lch_pat;
+  wire                              flush_cam;
   wire                              dc_sof;
   wire                              dc_eof;
   wire                              any_pat_en;
@@ -118,9 +119,13 @@ module disp_if (
   // Data Conversion 32bit to 16bit
   //================================================
   //*** Capture Data conversion 32 to 16
+   
   assign dc_data_vld = !fifo_empty || data_cntr != 1'b0 ? 1'b1 : 1'b0;
-  assign fifo_rd_en  = !fifo_empty && data_cntr == 1'b1 ? 1'b1 : 1'b0;
-  
+
+  // discard data up to start of frame
+  assign flush_cam = (c_state != CAM_PAT) && (fifo_rd_data[32] != 1'b1);
+  assign fifo_rd_en  = !fifo_empty && (data_cntr == 1'b1 || flush_cam);
+
   always @(posedge disp_clk) begin
     if (disp_rst) begin
       data_cntr <= 1'b0;
@@ -166,16 +171,16 @@ module disp_if (
       IDLE:
         if (disp_bars_sync) begin
           n_state = BAR_PAT;
-        end else if (disp_busy_sync) begin
-          n_state = BUSY_PAT;
         end else if (disp_cam_sync & dc_sof) begin
           n_state = CAM_PAT;
+//        end else if (disp_busy_sync) begin
+//          n_state = BUSY_PAT;
         end else begin
-          n_state = IDLE;
+          n_state = BUSY_PAT;
         end
       
       BAR_PAT: 
-        if (!disp_bars_sync & vsync_n_fe) begin
+        if (!disp_busy_sync & vsync_n_fe) begin
           n_state = IDLE;
         end else begin
           n_state = BAR_PAT;

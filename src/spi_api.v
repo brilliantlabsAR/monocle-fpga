@@ -1,49 +1,57 @@
 `include "defines.v"
 
 module spi_api(
-  input 			clk,
-  input 			reset,
+  input 		     clk,
+  input 		     reset,
 
-  input 			burst_rd_eof,
-  input [11:0] 			burst_rd_cnt,
-  output 			burst_rd_en,
+  input 		     burst_rd_eof,
+  input [11:0] 		     burst_rd_cnt,
+  output 		     burst_rd_en,
 
-  output 			rst_sw,
-  output reg 			en_xclk,
-  output 			en_cam,
-  output reg 			en_zoom,
-  output reg 			en_luma_cor,
-  output [1:0] 			sel_zoom_mode,
+  output 		     rst_sw,
+  output reg 		     en_xclk,
+  output 		     en_cam,
+  output 		     en_playback,
+  output reg 		     en_zoom,
+  output reg 		     en_luma_cor,
+  output [1:0] 		     sel_zoom_mode,
+  output reg 		     replay_toggle,
 
-  output reg 			en_mic,
-  output reg 			sync_to_video,
+  output 		     en_graphics,
+  output 		     graphics_base_wren,
+  output [31:0] 	     graphics_base_val,
+  output reg 		     graphics_swap_toggle,
+	       
+  output reg 		     en_mic,
+  output reg 		     sync_to_video,
 
-  output reg 			en_rb_shift,
-  output 			disp_bars,
-  output 			disp_busy,
-  output 			disp_cam,
+  output reg 		     en_rb_shift,
+  output 		     disp_bars,
+  output 		     disp_busy,
+  output 		     disp_cam,
 
-  output reg [`REG_SIZE-1:0] 	mem_control,
-  output reg 			discard_cbuf,
-  output reg 			clr_chksm,
-  output reg 			resume_fill,
-  output reg 			rd_audio,
-  output reg 			capt_audio,
-  output reg 			capt_video,
-  output reg 			capt_frm,
-  output reg 			capt_en,
-  output reg [4:0] 		rep_rate_control,
-  output reg [`BURST_WIDTH-1:0] wr_burst_size,
-  output reg [`BURST_WIDTH-1:0] rd_burst_size,
-  output reg 			burst_wr_en,
-  output reg [`REG_SIZE-1:0] 	burst_wdata,
+  output reg [`REG_SIZE-1:0] mem_control,
+  output reg 		     discard_cbuf,
+  output reg 		     clr_chksm,
+  output reg 		     resume_fill,
+  output reg 		     rd_audio,
+  output reg 		     capt_audio,
+  output reg 		     capt_video,
+  output reg 		     capt_frm,
+  output reg 		     capt_en,
+  output reg [4:0] 	     rep_rate_control,
 
-  input 			SCLK,
-  input 			MOSI,
-  output 			MISO,
-  input 			SS
+  input 		     burst_wr_rdy,
+  output 		     burst_wr_en,
+  output reg [15:0] 	     burst_wdata,
+
+  input 		     SCLK,
+  input 		     MOSI,
+  output 		     MISO,
+  input 		     SS
 );
 
+   localparam integer 	     GR_BUF_SIZE = 640*400;
 
    always @(posedge clk)
      if (reset) begin
@@ -56,10 +64,6 @@ module spi_api(
        capt_audio       <= 1'b0;
        capt_video       <= 1'b0;
        rep_rate_control <= 5'h3;
-       wr_burst_size    <= 16'h1;
-       rd_burst_size    <= 16'h1;
-       burst_wr_en      <= 1'b0;
-       burst_wdata      <= 8'h0;
      end
 
    wire [7:0] 	spi_data_in;
@@ -100,12 +104,14 @@ module spi_api(
    wire 	capture_apisig_write_req;
    wire [7:0] 	capture_apisig_val;
 
-   wire [31:0] 	graphics_base_val;
    wire 	graphics_memin_write_rdy;
    wire 	graphics_memin_write_req;
    wire [7:0] 	graphics_memin_val;
    wire 	graphics_apisig_write_req;
    wire [7:0] 	graphics_apisig_val;
+   wire 	graphics_base_wren_i;
+   wire [31:0] 	graphics_base_val_i;
+   
 
    wire [7:0] 	camera_zoom_val;
    wire [7:0] 	camera_status_val_o_u_t;
@@ -146,7 +152,8 @@ module spi_api(
      .p_capture_apisig_write_rdy(1'b1),
      .p_capture_apisig_write_req(capture_apisig_write_req),
      .p_capture_apisig_val(capture_apisig_val),
-     .p_graphics_base_val(graphics_base_val),
+     .p_graphics_base_wren(graphics_base_wren_i),
+     .p_graphics_base_val(graphics_base_val_i),
      .p_graphics_memin_write_rdy(graphics_memin_write_rdy),
      .p_graphics_memin_write_req(graphics_memin_write_req),
      .p_graphics_memin_val(graphics_memin_val),
@@ -240,24 +247,113 @@ module spi_api(
    assign camera_status_val_o_u_t = {6'b000000, cam_on, xclk_on};
    assign sel_zoom_mode = camera_status_val_o_u_t[1:0];
 
-   assign disp_busy = 1'b0;
-   assign disp_bars = ~cam_on;
-   assign disp_cam = cam_on;
-
 
    // not supported on monocle
    assign camera_config_write_req = 1'b0;
 
    //////// VIDEO
 
+   reg video_on;
 
+   wire replay_req;
+   
+   assign replay_req = video_apisig_write_req && video_apisig_val[2:0] == 3'b111;
+
+   always @(posedge clk)
+     if (reset)
+       replay_toggle <= 1'b0;
+     else if (replay_req & video_on)
+       replay_toggle <= ~replay_toggle;
+
+   always @(posedge clk)
+     if (reset)
+	video_on <= 1'b0;
+     else if (video_apisig_write_req && video_apisig_val[3:1] == 3'b010)
+	video_on <= cam_on & video_apisig_val[0];
+
+   assign en_playback = video_on;
+
+   
    //////// GRAPHICS
+
+   wire clear_req, clear_end;
+   reg clearing;
+   reg [17:0] clear_cnt;
+   reg memin_wr_en;
+   reg memin_cntr;
+   
+   assign clear_req = graphics_apisig_write_req && graphics_apisig_val[2:0] == 3'b110;
+   assign swap_req = graphics_apisig_write_req && graphics_apisig_val[2:0] == 3'b111;
+
+   //// Swap operation
+
+   always @(posedge clk)
+     if (reset)
+       graphics_swap_toggle <= 1'b0;
+     else if (swap_req)
+       graphics_swap_toggle <= ~graphics_swap_toggle;
+
+   //// Clear operation
+   
+   always @(posedge clk)
+     if (reset)
+       clearing <= 1'b0;
+     else if (clear_req)
+       clearing <= 1'b1;
+     else if (clear_end && burst_wr_rdy)
+       clearing <= 1'b0;
+
+   always @(posedge clk)
+     if (clear_req)
+       clear_cnt <= 18'd0;
+     else if (clearing && burst_wr_rdy)
+       clear_cnt <= clear_cnt + 18'd1;
+
+   assign clear_end = (clear_cnt == (GR_BUF_SIZE-1));
+
+   ///// MCU write operation
 
    assign graphics_memin_write_req = 1'b1;
 
+   always @(posedge clk)
+     if (reset)
+       memin_cntr <= 1'b0;
+     else if (graphics_memin_write_rdy)
+       memin_cntr <= ~memin_cntr;
+   
+   always @(posedge clk)
+     if (reset)
+       memin_wr_en <= 1'b0;
+     else 
+       memin_wr_en <= graphics_memin_write_rdy & memin_cntr;
 
+   //// Burst data
+
+   assign burst_wr_en = clearing ? burst_wr_rdy : memin_wr_en;
+   
+   always @(posedge clk)
+     if (clear_req)
+       burst_wdata <= 16'h0000;
+     else if (graphics_memin_write_rdy)
+       burst_wdata <= { burst_wdata[7:0], graphics_memin_val };
+
+   //// Write base
+   assign graphics_base_wren = graphics_base_wren_i | clear_req;
+   assign graphics_base_val = clear_req ? 32'd0 : graphics_base_val_i;
+
+   
    //////// DISPLAY
 
+   reg graphics_on;
+
+   always @(posedge clk)
+     if (reset)
+       graphics_on <= 1'b0;
+     else if (graphics_apisig_write_req && graphics_apisig_val[2:1] == 2'b10)
+       graphics_on <= graphics_apisig_val[0];
+
+   assign en_graphics = graphics_on;
+   
 
    //////// CAPTURE
 
@@ -279,5 +375,11 @@ module spi_api(
 
    assign capture_memout_read_rdy = 1'b1;
    assign burst_rd_en = capture_memout_read_req;
+
+   //////// Misc
+   
+   assign disp_busy = 1'b0;
+   assign disp_bars = ~(video_on | graphics_on);
+   assign disp_cam = video_on | graphics_on;
 
 endmodule

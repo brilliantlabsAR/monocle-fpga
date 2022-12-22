@@ -38,8 +38,6 @@
 
 
 
-//`define BURST_RDWR_TEST
-
 //*** Single Frame Capture and Replay continuously
 //`define SINGLE_FRAME_REPLAY
 
@@ -91,11 +89,8 @@
 //`define BURST_LEN                            32
 `define MEM_WR_BL                            32
 `define MEM_RD_BL                            32
-`define TOTAL_BUF                            32
-//`define TOTAL_A_BUF_SIZE                     524288
-//`define TOTAL_BUF                            7
-`define MAX_FRM_PER_BUF                      4
-`define MAX_TOTAL_FRM                        512
+`define MAX_FRM_PER_BUF                      60
+`define MAX_TOTAL_FRM                        60
 
 // Frame Length with 1/4 compression ratio
 `define AVG_FRM_LEN                          FRAME_LENGTH/4
