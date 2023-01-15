@@ -170,6 +170,11 @@ module fpga_top (
   wire 			    gr_burst_avail;
   wire 			    gr_rd_en;
   wire [`DSIZE-1:0] 	    gr_rd_data;
+
+  wire 			    o_buf_avail;
+  wire 			    c_buf_avail;
+  wire 			    o_frm_avail;
+  wire 			    c_frm_avail;
   
   wire [7:0]                        cam_frm_per_sec;
   wire [`STAT_CNTR_WIDTH-1:0]       cam_total_frm;
@@ -579,6 +584,10 @@ module fpga_top (
     .cfifo_afull          (cfifo_afull),
     .cfifo_wr_en          (cfifo_wr_en),
     .cfifo_wr_data        (cfifo_wr_data),
+    .o_buf_avail(o_buf_avail),
+    .c_buf_avail(c_buf_avail),
+    .o_frm_avail(o_frm_avail),
+    .c_frm_avail(c_frm_avail),
 	.dbg_mrb_err          (dbg_mrb_err)
   );
   
@@ -790,7 +799,12 @@ module fpga_top (
      .burst_wdata          (gr_wr_data),
      .burst_rd_eof         (eob),
      .burst_rd_cnt         (cfifo_rd_cnt),
-     .burst_rd_en          (cfifo_rd_en)
+     .burst_rd_en          (cfifo_rd_en),
+     .burst_rd_data        (cfifo_rd_data),
+     .o_buf_avail(o_buf_avail),
+     .c_buf_avail(c_buf_avail),
+     .o_frm_avail(o_frm_avail),
+     .c_frm_avail(c_frm_avail)
    );
 
    wire gr_base_fifo_empty, gr_base_fifo_full;

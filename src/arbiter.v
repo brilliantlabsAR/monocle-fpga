@@ -66,6 +66,10 @@ module arbiter (
   cfifo_afull, // Programmable full
   cfifo_wr_en,
   cfifo_wr_data,
+  o_buf_avail,
+  c_buf_avail,
+  o_frm_avail,
+  c_frm_avail,
   dbg_mrb_err
 );
 
@@ -162,7 +166,11 @@ module arbiter (
   input  wire                       cfifo_afull;
   output wire                       cfifo_wr_en;
   output wire [`DSIZE-1:0]          cfifo_wr_data;
-  output wire                       dbg_mrb_err;
+  output wire 			    o_buf_avail;
+  output wire 			    c_buf_avail;
+  output wire 			    o_frm_avail;
+  output wire 			    c_frm_avail;
+  output wire 			    dbg_mrb_err;
 
   //output reg                        wfifo_full_err/* synthesis syn_keep=1 */;
 
@@ -267,7 +275,6 @@ module arbiter (
   reg  [FNUM_WIDTH-1:0]             w_cur_fnum;
   reg  [FNUM_WIDTH-1:0]             w_first_fnum;
   reg  [FNUM_WIDTH-1:0]             w_last_fnum;
-  wire                              c_buf_avail;
   wire                              capt_avail;
   wire                              c_bcq_tob_pulse;
   wire                              bcq_wr_en_c;
@@ -314,9 +321,6 @@ module arbiter (
   reg                               buf_full;
   wire                              o_mem_rd_vld;
   wire                              c_mem_rd_vld;
-  wire                              o_buf_avail;
-  wire                              o_frm_avail;
-  wire                              c_frm_avail;
   reg                               w_frm_in_progress;
   reg                               lch_frm_capt_en;
   wire                              send_wr_to_tob;
@@ -499,7 +503,7 @@ module arbiter (
 						   w_last_fnum,
 						   w_first_fnum};
 
-  assign bcq_wr_en_c = wr_eof;
+  assign bcq_wr_en_c = wr_eof & lch_frm_capt_en;
   assign bcq_wr_en_o = en_playback_sync & ((wr_eof & ~replay_mode) | replay_start);
 
   // Synchronize BCQ write enable with latched write data

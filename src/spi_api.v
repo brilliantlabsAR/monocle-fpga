@@ -6,6 +6,7 @@ module spi_api(
 
   input 		     burst_rd_eof,
   input [11:0] 		     burst_rd_cnt,
+  input [7:0] 		     burst_rd_data,
   output 		     burst_rd_en,
 
   output 		     rst_sw,
@@ -45,6 +46,11 @@ module spi_api(
   output 		     burst_wr_en,
   output reg [15:0] 	     burst_wdata,
 
+  input 		     o_buf_avail,
+  input 		     c_buf_avail,
+  input 		     o_frm_avail,
+  input 		     c_frm_avail,
+	       
   input 		     SCLK,
   input 		     MOSI,
   output 		     MISO,
@@ -244,7 +250,7 @@ module spi_api(
      else
        en_zoom <= camera_zoom_val[1:0] != 2'b00;
 
-   assign camera_status_val_o_u_t = {6'b000000, cam_on, xclk_on};
+   assign camera_status_val_o_u_t = {2'b00, o_frm_avail, o_buf_avail, c_frm_avail, c_buf_avail, cam_on, xclk_on};
    assign sel_zoom_mode = camera_status_val_o_u_t[1:0];
 
 
@@ -358,7 +364,7 @@ module spi_api(
    //////// CAPTURE
 
    reg capt_done;
- 
+
    always @(posedge clk)
      if (reset)
        end_capture <= 1'b0;
@@ -376,6 +382,9 @@ module spi_api(
    assign capture_memout_read_rdy = 1'b1;
    assign burst_rd_en = capture_memout_read_req;
 
+   assign capture_memout_val_o_u_t = burst_rd_data;
+
+   
    //////// Misc
    
    assign disp_busy = 1'b0;

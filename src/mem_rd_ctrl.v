@@ -220,8 +220,11 @@ module mem_rd_ctrl (
 
       LOAD_LIVE:
         if (rd_eof) begin
-	  // If no new frame from camera, re-read current otherwise move to new frame in BCQ
-          n_state = bcq_empty ? FCQ_AVAIL : RD_BCQ;
+           if (CAPT_CNTRL_SEL)
+             n_state = IDLE;
+           else
+	     // If no new frame from camera, re-read current otherwise move to new frame in BCQ
+             n_state = bcq_empty ? FCQ_AVAIL : RD_BCQ;
         end else begin
           n_state = LOAD_LIVE;
         end
