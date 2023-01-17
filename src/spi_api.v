@@ -22,7 +22,7 @@ module spi_api(
   output 		     graphics_base_wren,
   output [31:0] 	     graphics_base_val,
   output reg 		     graphics_swap_toggle,
-	       
+
   output reg 		     en_mic,
   output reg 		     sync_to_video,
 
@@ -50,7 +50,8 @@ module spi_api(
   input 		     c_buf_avail,
   input 		     o_frm_avail,
   input 		     c_frm_avail,
-	       
+
+  input [31:0] 		     dbg_status,
   input 		     SCLK,
   input 		     MOSI,
   output 		     MISO,
@@ -117,7 +118,7 @@ module spi_api(
    wire [7:0] 	graphics_apisig_val;
    wire 	graphics_base_wren_i;
    wire [31:0] 	graphics_base_val_i;
-   
+
 
    wire [7:0] 	camera_zoom_val;
    wire [7:0] 	camera_status_val_o_u_t;
@@ -188,18 +189,10 @@ module spi_api(
      .p_display_apisig_val(display_apisig_val)
    );
 
-   assign rst_sw = 1'b0;
-
-   //////// SYSTEM
-
-   assign system_ID_val_o_u_t = 16'h4b07;
-   assign system_version_val_o_u_t = 24'h221206;
-
-
    //////// CAMERA
 
    wire 	capt_req;
-   
+
    reg 		cam_on, xclk_on;
 
    always @(posedge clk)
@@ -262,7 +255,7 @@ module spi_api(
    reg video_on;
 
    wire replay_req;
-   
+
    assign replay_req = video_apisig_write_req && video_apisig_val[2:0] == 3'b111;
 
    always @(posedge clk)
@@ -279,7 +272,7 @@ module spi_api(
 
    assign en_playback = video_on;
 
-   
+
    //////// GRAPHICS
 
    wire clear_req, clear_end;
@@ -287,7 +280,7 @@ module spi_api(
    reg [17:0] clear_cnt;
    reg memin_wr_en;
    reg memin_cntr;
-   
+
    assign clear_req = graphics_apisig_write_req && graphics_apisig_val[2:0] == 3'b110;
    assign swap_req = graphics_apisig_write_req && graphics_apisig_val[2:0] == 3'b111;
 
@@ -300,7 +293,7 @@ module spi_api(
        graphics_swap_toggle <= ~graphics_swap_toggle;
 
    //// Clear operation
-   
+
    always @(posedge clk)
      if (reset)
        clearing <= 1'b0;
@@ -326,17 +319,17 @@ module spi_api(
        memin_cntr <= 1'b0;
      else if (graphics_memin_write_rdy)
        memin_cntr <= ~memin_cntr;
-   
+
    always @(posedge clk)
      if (reset)
        memin_wr_en <= 1'b0;
-     else 
+     else
        memin_wr_en <= graphics_memin_write_rdy & memin_cntr;
 
    //// Burst data
 
    assign burst_wr_en = clearing ? burst_wr_rdy : memin_wr_en;
-   
+
    always @(posedge clk)
      if (clear_req)
        burst_wdata <= 16'h0000;
@@ -347,7 +340,7 @@ module spi_api(
    assign graphics_base_wren = graphics_base_wren_i | clear_req;
    assign graphics_base_val = clear_req ? 32'd0 : graphics_base_val_i;
 
-   
+
    //////// DISPLAY
 
    reg graphics_on;
@@ -359,7 +352,7 @@ module spi_api(
        graphics_on <= graphics_apisig_val[0];
 
    assign en_graphics = graphics_on;
-   
+
 
    //////// CAPTURE
 
@@ -384,9 +377,19 @@ module spi_api(
 
    assign capture_memout_val_o_u_t = burst_rd_data;
 
-   
+
+   //////// SYSTEM
+
+   assign rst_sw = 1'b0;
+
+   assign system_ID_val_o_u_t = 16'h4b07;
+   assign system_version_val_o_u_t = 24'h230117;
+   //assign system_status_val_o_u_t = dbg_status;
+   assign system_status_val_o_u_t = graphics_base_val_i;
+
+
    //////// Misc
-   
+
    assign disp_busy = 1'b0;
    assign disp_bars = ~(video_on | graphics_on);
    assign disp_cam = video_on | graphics_on;
