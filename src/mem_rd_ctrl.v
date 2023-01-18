@@ -4,6 +4,7 @@
 module mem_rd_ctrl (
   rst,
   clk,
+  graphics_mode,
   rpt_rate_ctrl,
   // FCQ
   fcq_wr_addr,
@@ -36,6 +37,7 @@ module mem_rd_ctrl (
   rd_eob,
   rd_sof,
   rd_eof,
+  rd_end_replay,
   dbg_mrb_err
 );
   
@@ -47,6 +49,7 @@ module mem_rd_ctrl (
   // Clock & Reset
   input  wire                       rst;
   input  wire                       clk;
+  input  wire                       graphics_mode;
   input  wire [4:0]                 rpt_rate_ctrl;
   // FCQ
   input  wire [FNUM_WIDTH-1:0]      fcq_wr_addr;
@@ -79,6 +82,7 @@ module mem_rd_ctrl (
   output wire                       rd_eob;
   output wire                       rd_sof;
   output wire                       rd_eof;
+  output wire                       rd_end_replay;
   output reg                        dbg_mrb_err/* synthesis syn_keep=1 */;
   // Local Parameters
   localparam  IDLE                = 14'b00_0000_0000_0001;
@@ -89,7 +93,7 @@ module mem_rd_ctrl (
   localparam  END_OF_BUF          = 14'b00_0000_0010_0000;
   localparam  BCQ_AVAIL           = 14'b00_0000_0100_0000;
   localparam  LOAD_SOF            = 14'b00_0000_1000_0000;
-  localparam  INC_R_FNUM          = 14'b00_0001_0000_0000;
+  localparam  LOAD_LIVE           = 14'b00_0001_0000_0000;
   localparam  RD_BCQ              = 14'b00_0010_0000_0000;
   localparam  RD_FCQ              = 14'b00_0100_0000_0000;
   localparam  DISCARD_BUF         = 14'b00_1000_0000_0000;
@@ -100,6 +104,10 @@ module mem_rd_ctrl (
   reg  [13:0]                       c_state;
   reg  [13:0]                       n_state;
   reg  [FNUM_WIDTH-1:0]             r_fnum;
+  reg  [FNUM_WIDTH-1:0]             r_fnum_stop;
+  wire                              replay_bot_frm;
+  wire 			            end_of_playback;
+   
   wire [71:0]                       fcq_rdata;
   wire [ADDR_WIDTH-1:0]             r_sof_maddr;
   wire                              r_tail_frm/* synthesis syn_keep=1 */;
@@ -114,6 +122,7 @@ module mem_rd_ctrl (
   wire [FNUM_WIDTH-1:0]             w_top_fnum;
   wire [FNUM_WIDTH-1:0]             r_head_fnum/* synthesis syn_keep=1 */;
   wire [FNUM_WIDTH-1:0]             r_top_fnum/* synthesis syn_keep=1 */;
+  wire                              r_replay;
   wire [9:0]                        used_buf_cnt;
   wire [35:0]                       fl_fcq_wdata;
   wire [35:0]                       fl_fcq_rdata;
@@ -156,13 +165,12 @@ module mem_rd_ctrl (
   always @(*) begin
     case (c_state)
       IDLE:
-        /*if (!bcq_empty) begin // Next capture buffer ready
+        if (!bcq_empty)
           n_state = RD_BCQ;
-        end else */if (!CAPT_CNTRL_SEL && frm_avail) begin //OLED only
-          n_state = SET_LIVE_MODE;
-        end else begin
-          n_state = IDLE;
-        end
+        else if (graphics_mode && frm_avail)
+          n_state = RD_FCQ;
+        else
+          n_state = IDLE;        
 
       SET_LIVE_MODE:
         n_state = RD_FCQ;
@@ -178,11 +186,7 @@ module mem_rd_ctrl (
         n_state = BCQ_AVAIL;
         
       BCQ_AVAIL:
-        if (rd_eof) begin
-		  n_state = RD_FCQ;
-		end else begin
-          n_state = BCQ_AVAIL;
-        end
+	n_state = (bcq_empty | in_replay_mode) ? RD_FCQ : RD_BCQ; // if behind, discard
         
       RD_FCQ:
         n_state = FCQ_AVAIL;
@@ -191,26 +195,12 @@ module mem_rd_ctrl (
         n_state = FRM_RPT_WAIT;
         
       FRM_RPT_WAIT: //Single cycle state
-        if (!CAPT_CNTRL_SEL && disc_this_buf && frm_avail) begin //OLED Only
-          n_state = DISCARD_BUF;
-        end else if (CAPT_CNTRL_SEL && disc_this_buf) begin //CAPT Only
-          n_state = DISCARD_BUF;
-        //end else if (!CAPT_CNTRL_SEL && !in_replay_mode && !bcq_empty) begin // OLED Only
-        //  n_state = SET_REPLAY_MODE;
-        end else if (frm_rpt_done) begin
-          if (CAPT_CNTRL_SEL && r_tail_frm) begin //CAPT Only
-            n_state = END_OF_BUF;
-          end else if (!CAPT_CNTRL_SEL && ((in_replay_mode && r_tail_frm) || (!in_replay_mode && !bcq_empty))) begin // OLED Only
-            n_state = LOAD_HEAD;
-          end else if (r_bot_frm) begin
-            n_state = LOAD_TOP;
-          end else begin
-            n_state = INC_R_FNUM;
-          end
+        if (frm_rpt_done) begin
+           n_state = (in_replay_mode && !end_of_playback) ? LOAD_TOP : LOAD_LIVE;
         end else begin
-          n_state = LOAD_SOF;
+           n_state = LOAD_SOF;
         end
-        
+
       LOAD_TOP:
         if (rd_eof) begin
           n_state = RD_FCQ;
@@ -219,11 +209,7 @@ module mem_rd_ctrl (
         end
         
       LOAD_HEAD:
-        if (rd_eof) begin
-          n_state = RD_FCQ;
-        end else begin
-          n_state = LOAD_HEAD;
-        end
+        n_state = RD_FCQ;
 
       LOAD_SOF:
         if (rd_eof) begin
@@ -232,11 +218,15 @@ module mem_rd_ctrl (
           n_state = LOAD_SOF;
         end
 
-      INC_R_FNUM:
+      LOAD_LIVE:
         if (rd_eof) begin
-          n_state = RD_FCQ;
+           if (CAPT_CNTRL_SEL)
+             n_state = IDLE;
+           else
+	     // If no new frame from camera, re-read current otherwise move to new frame in BCQ
+             n_state = bcq_empty ? FCQ_AVAIL : RD_BCQ;
         end else begin
-          n_state = INC_R_FNUM;
+          n_state = LOAD_LIVE;
         end
         
       END_OF_BUF:
@@ -267,23 +257,22 @@ module mem_rd_ctrl (
       r_fnum <= {FNUM_WIDTH{1'b0}};
     end else if (c_state == SET_LIVE_MODE) begin
       r_fnum <= w_top_fnum;
-    //end else if (c_state == BCQ_AVAIL) begin
-    //  r_fnum <= r_head_fnum;
+    end else if (c_state == RD_BCQ) begin
+       r_fnum <= r_replay ? r_top_fnum : r_head_fnum;
     end else if (rd_eof) begin
-      if (c_state == LOAD_HEAD) begin
-        r_fnum <= r_head_fnum;
-      end else if (c_state == LOAD_TOP) begin
-        if (in_replay_mode) begin
-		  r_fnum <= r_top_fnum;
-		end else begin
-		  r_fnum <= w_top_fnum;
-		end
-      end else if (c_state == INC_R_FNUM) begin
-        r_fnum <= r_fnum + 9'd1;
-      end
+      if (c_state == LOAD_TOP && in_replay_mode)
+	  r_fnum <= replay_bot_frm ? 0 : r_fnum + 1;
     end
   end
-  
+
+  assign replay_bot_frm = (r_fnum == (`MAX_FRM_PER_BUF - 1));
+
+  always @(posedge clk)
+    if (c_state == RD_BCQ && r_replay)
+       r_fnum_stop <= r_head_fnum;
+
+  assign end_of_playback = (r_fnum == r_fnum_stop);
+   
   // SOB
   assign rd_sob = ((r_fnum == r_head_fnum) && rd_sof) ? 1'b1 : 1'b0;
   
@@ -303,21 +292,17 @@ module mem_rd_ctrl (
     end
   end
   
-  assign frm_rpt_done = (frm_rpt_cntr >= rpt_rate_ctrl-1) ? 1'b1 : 1'b0;
-  
-  always @(posedge clk) begin
-    if (rst) begin
+  assign frm_rpt_done = (graphics_mode) ? 1'b0 : (!in_replay_mode || frm_rpt_cntr >= rpt_rate_ctrl-1);
+
+  always @(posedge clk)
+    if (rst)
       in_replay_mode <= 1'b0;
-    //end else if (c_state == SET_LIVE_MODE) begin
-    end else if (c_state == DISCARD_BUF) begin
-      in_replay_mode <= 1'b0;
-    //end else if (rd_eof && c_state == SET_REPLAY_MODE) begin
-    end else if (rd_eof && c_state == LOAD_HEAD && (!in_replay_mode && !bcq_empty)) begin
+    else if (c_state == RD_BCQ && r_replay)
       in_replay_mode <= 1'b1;
-    end
-  end
+    else if (end_of_playback) // only if not c_state == RD_BCQ && r_replay
+      in_replay_mode <= 1'b0;
   
-  assign disc_buf_ack = ((!CAPT_CNTRL_SEL && rd_eof) || (CAPT_CNTRL_SEL)) && (c_state == DISCARD_BUF) ? 1'b1 : 1'b0;
+  assign disc_buf_ack = (c_state == RD_BCQ);
   assign bcq_rd_req = disc_buf_ack ? 1'b1 : 1'b0;
   
   assign is_video_buf = bcq_wdata[20];
@@ -362,7 +347,7 @@ module mem_rd_ctrl (
       r_maddr <= {ADDR_WIDTH{1'b0}};
     end else if (c_state == FCQ_AVAIL) begin
       r_maddr <= r_sof_maddr;
-	end else if (mem_rd_cmd) begin
+    end else if (mem_rd_cmd) begin
       r_maddr <= r_maddr + (`MEM_RD_BL<<2); //c_raddr + BL*4
     end
   end
@@ -372,18 +357,20 @@ module mem_rd_ctrl (
     r_maddr_d1 <= r_maddr;
   end
   
-  // Buffer available
+  // Buffer - trigger read out in arbitrator
   always @(posedge clk) begin
     if (rst || c_state == IDLE) begin
       buf_avail <= 1'b0;
     end else if (c_state == FCQ_AVAIL) begin
       buf_avail <= 1'b1;
+    end else if (CAPT_CNTRL_SEL && rd_eof) begin
+      buf_avail <= 1'b0;
     end
   end
   
   assign w_tail_frm = fcq_wdata[1+:1];
   
-  // Frame available
+  // Frame - trigger state machine
   always@(posedge clk) begin
     if(rst) begin
       frm_avail <= 1'b0;
@@ -412,7 +399,8 @@ module mem_rd_ctrl (
   
   assign rd_sof = rd_word_cntr == 0 ? 1'b1 : 1'b0;
   assign rd_eof = mem_rd_vld && rd_word_cntr == ((r_frm_len>>2)-1) ? 1'b1 : 1'b0; // (FRAME_LENGTH/4)-1
-  
+  assign rd_end_replay = in_replay_mode & end_of_playback;
+   
   //================================================
   //** Frame Control Q
   //================================================
@@ -531,11 +519,11 @@ module mem_rd_ctrl (
   assign bcq_empty   = bcq_empty_i[0] & bcq_empty_i[1];
   
   assign buf_size    = bcq_rdata[21+:32];
-  assign video_buf_i = bcq_rdata[20+:1];
-  assign frm_buf_i   = bcq_rdata[19+:1];
-  assign audio_buf_i = bcq_rdata[18+:1];
-  assign r_head_fnum = bcq_rdata[9+:FNUM_WIDTH];
-  assign r_top_fnum  = bcq_rdata[0+:FNUM_WIDTH];
+  assign r_replay    = bcq_rdata[FNUM_WIDTH+FNUM_WIDTH+2];
+  assign frm_buf_i   = bcq_rdata[FNUM_WIDTH+FNUM_WIDTH+1];
+  assign audio_buf_i = bcq_rdata[FNUM_WIDTH+FNUM_WIDTH];
+  assign r_head_fnum = bcq_rdata[FNUM_WIDTH+FNUM_WIDTH-1:FNUM_WIDTH];
+  assign r_top_fnum  = bcq_rdata[FNUM_WIDTH-1:0];
   
   always @(posedge clk) begin
     bcq_empty_d1 <= bcq_empty;
@@ -549,24 +537,6 @@ module mem_rd_ctrl (
     rd_frm_buf   <= frm_buf_i;
     rd_audio_buf <= audio_buf_i;
   end
-  
-//  // Only for debug
-  
-//  always @(posedge clk) begin
-//    if (rst) begin
-//	  dbg_mrb_err <= 1'b0;
-//	end else if (rd_eof && r_sof_maddr[11:0] != 12'b0) begin
-//	  dbg_mrb_err <= 1'b1;
-//	end
-//  end
-
-//  always @(posedge clk) begin
-//    if (rst) begin
-//	  dbg_mrb_err <= 1'b0;
-//	end else if (rd_eof && in_replay_mode && r_fnum != r_top_fnum) begin
-//	  dbg_mrb_err <= 1'b1;
-//	end
-//  end
   
   always @(posedge clk) begin
     if (rst) begin
