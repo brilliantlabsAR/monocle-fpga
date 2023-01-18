@@ -22,6 +22,7 @@ entity monocle_api is
     signal p_capture_apisig_write_rdy : in std_ulogic;
     signal p_capture_apisig_write_req : out std_ulogic;
     signal p_capture_apisig_val : out std_ulogic_vector(7 downto 0);
+    signal p_graphics_bg_val : out std_ulogic_vector(31 downto 0);
     signal p_graphics_base_val : out std_ulogic_vector(31 downto 0);
     signal p_graphics_base_wren : out std_ulogic;
     signal p_graphics_memin_write_rdy : out std_ulogic;
@@ -64,6 +65,62 @@ architecture rtl of monocle_api is
     end if;
   end function as_bit;
 
+  function uint_add(v1, v2 : std_ulogic_vector) return std_ulogic_vector is
+    variable u1, u2, res : unsigned (v1'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    res := u1 + u2;
+    return std_ulogic_vector(res);
+  end function;
+
+  function uint_sub(v1, v2 : std_ulogic_vector) return std_ulogic_vector is
+    variable u1, u2, res : unsigned (v1'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    res := u1 - u2;
+    return std_ulogic_vector(res);
+  end function;
+
+  function uint_lt(v1, v2 : std_ulogic_vector) return boolean is
+    variable u1 : unsigned (v1'length-1 downto 0);
+    variable u2 : unsigned (v2'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    return u1 < u2;
+  end function;
+
+  function uint_le(v1, v2 : std_ulogic_vector) return boolean is
+    variable u1 : unsigned (v1'length-1 downto 0);
+    variable u2 : unsigned (v2'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    return u1 <= u2;
+  end function;
+
+  function uint_gt(v1, v2 : std_ulogic_vector) return boolean is
+    variable u1 : unsigned (v1'length-1 downto 0);
+    variable u2 : unsigned (v2'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    return u1 > u2;
+  end function;
+
+  function uint_ge(v1, v2 : std_ulogic_vector) return boolean is
+    variable u1 : unsigned (v1'length-1 downto 0);
+    variable u2 : unsigned (v2'length-1 downto 0);
+  begin
+    u1 := unsigned(v1);
+    u2 := unsigned(v2);
+    return u1 >= u2;
+  end function;
+
+  attribute ram_block : integer;
+
   signal reg_we : std_ulogic;
   signal reg_cap : std_ulogic;
   signal datain_we : std_ulogic;
@@ -81,6 +138,9 @@ architecture rtl of monocle_api is
   signal capture_status_data_reg : std_ulogic_vector(15 downto 0);
   signal capture_status_sel : std_ulogic;
   signal capture_memout_sel : std_ulogic;
+  signal graphics_bg_reg : std_ulogic_vector(31 downto 0);
+  signal graphics_bg_en : std_ulogic;
+  signal graphics_bg_sel : std_ulogic;
   signal graphics_base_reg : std_ulogic_vector(31 downto 0);
   signal graphics_base_en : std_ulogic;
   signal graphics_base_sel : std_ulogic;
@@ -115,6 +175,8 @@ begin
   p_capture_apisig_write_req <= (device(1) and reg_we) and as_bit(p_ext_api_din = X"04");
   p_capture_apisig_val <= p_ext_api_din;
   device_match(2) <= as_bit(p_ext_api_din = X"44");
+  graphics_bg_en <= (graphics_bg_sel and datain_we_d) and datain_vld(3);
+  p_graphics_bg_val <= graphics_bg_reg;
   graphics_base_en <= (graphics_base_sel and datain_we_d) and datain_vld(3);
   p_graphics_base_val <= graphics_base_reg;
   p_graphics_base_wren <= graphics_base_en_d;
@@ -283,13 +345,35 @@ begin
       end if;
     end if;
   end process;
+  process (reset, clk)
+  begin
+    if (clk'event and clk='1') then
+      if reset = '1' then
+        capture_memout_sel <= '0';
+      elsif p_ext_api_start = '1' then
+        capture_memout_sel <= '0';
+      elsif reg_we = '1' then
+        capture_memout_sel <= device(1) and as_bit(p_ext_api_din = X"10");
+      end if;
+    end if;
+  end process;
+  process (reset, clk)
+  begin
+    if (clk'event and clk='1') then
+      if reset = '1' then
+        graphics_bg_reg <= X"80008000";
+      elsif graphics_bg_en = '1' then
+        graphics_bg_reg <= datain_reg(31 downto 0);
+      end if;
+    end if;
+  end process;
   process (clk)
   begin
     if (clk'event and clk='1') then
       if p_ext_api_start = '1' then
-        capture_memout_sel <= '0';
+        graphics_bg_sel <= '0';
       elsif reg_we = '1' then
-        capture_memout_sel <= device(1) and as_bit(p_ext_api_din = X"10");
+        graphics_bg_sel <= device(2) and as_bit(p_ext_api_din = X"03");
       end if;
     end if;
   end process;
@@ -391,10 +475,12 @@ begin
       end if;
     end if;
   end process;
-  process (clk)
+  process (reset, clk)
   begin
     if (clk'event and clk='1') then
-      if p_ext_api_start = '1' then
+      if reset = '1' then
+        camera_histogram_sel <= '0';
+      elsif p_ext_api_start = '1' then
         camera_histogram_sel <= '0';
       elsif reg_we = '1' then
         camera_histogram_sel <= device(3) and as_bit(p_ext_api_din = X"20");

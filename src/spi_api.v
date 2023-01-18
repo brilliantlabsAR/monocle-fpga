@@ -44,7 +44,7 @@ module spi_api(
 
   input 		     burst_wr_rdy,
   output 		     burst_wr_en,
-  output reg [15:0] 	     burst_wdata,
+  output [15:0] 	     burst_wdata,
 
   input 		     o_buf_avail,
   input 		     c_buf_avail,
@@ -118,7 +118,7 @@ module spi_api(
    wire [7:0] 	graphics_apisig_val;
    wire 	graphics_base_wren_i;
    wire [31:0] 	graphics_base_val_i;
-
+   wire [31:0] 	graphics_bg_val;
 
    wire [7:0] 	camera_zoom_val;
    wire [7:0] 	camera_status_val_o_u_t;
@@ -159,6 +159,7 @@ module spi_api(
      .p_capture_apisig_write_rdy(1'b1),
      .p_capture_apisig_write_req(capture_apisig_write_req),
      .p_capture_apisig_val(capture_apisig_val),
+     .p_graphics_bg_val(graphics_bg_val),
      .p_graphics_base_wren(graphics_base_wren_i),
      .p_graphics_base_val(graphics_base_val_i),
      .p_graphics_memin_write_rdy(graphics_memin_write_rdy),
@@ -312,6 +313,16 @@ module spi_api(
 
    ///// MCU write operation
 
+   reg clear_cntr;
+
+   always @(posedge clk)
+     if (clear_req)
+       clear_cntr <= 1'b0;
+     else if (clearing && burst_wr_rdy)
+       clear_cntr <= ~clear_cntr;
+
+   reg [15:0] memin_reg;
+
    assign graphics_memin_write_req = 1'b1;
 
    always @(posedge clk)
@@ -331,10 +342,10 @@ module spi_api(
    assign burst_wr_en = clearing ? burst_wr_rdy : memin_wr_en;
 
    always @(posedge clk)
-     if (clear_req)
-       burst_wdata <= 16'h0000;
-     else if (graphics_memin_write_rdy)
-       burst_wdata <= { burst_wdata[7:0], graphics_memin_val };
+     if (graphics_memin_write_rdy)
+       memin_reg <= { memin_reg[7:0], graphics_memin_val };
+
+   assign burst_wdata = (clearing == 1'b0) ? memin_reg : (clear_cntr == 1'b0) ? graphics_bg_val[31:16] : graphics_bg_val[15:0];
 
    //// Write base
    assign graphics_base_wren = graphics_base_wren_i | clear_req;
