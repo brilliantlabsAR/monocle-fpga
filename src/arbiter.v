@@ -99,8 +99,7 @@ module arbiter (
   localparam  MASK_WIDTH = (4*DQ_WIDTH)/(PSRAM_WIDTH*CS_WIDTH);
 
   localparam integer GR_BUF_SZ = 2 * `FRAME_LENGTH;
-//  localparam integer GR_BUF_BASEADDR0 = MEM_SIZE - GR_BUF_SZ;
-  localparam integer GR_BUF_BASEADDR0 = 0;
+  localparam integer GR_BUF_BASEADDR0 = MEM_SIZE - GR_BUF_SZ;
   localparam integer GR_BUF_BASEADDR1 = GR_BUF_BASEADDR0 + `FRAME_LENGTH;
 
   // Camera Interface
@@ -1079,11 +1078,7 @@ module arbiter (
      else if (graphics_swap)
        graphics_disp_buf <= ~graphics_disp_buf;
 
-   // write directly to buffer visible for testing
-   assign gr_back_maddr = (graphics_disp_buf == 1'b0) ? GR_BUF_BASEADDR0 : GR_BUF_BASEADDR1;
-
-   // write to buffer not visible
-   //assign gr_back_maddr = (graphics_disp_buf == 1'b0) ? GR_BUF_BASEADDR1 : GR_BUF_BASEADDR0;
+   assign gr_back_maddr = (graphics_disp_buf == 1'b0) ? GR_BUF_BASEADDR1 : GR_BUF_BASEADDR0;
 
    always @(posedge clk)
      if (rst)
