@@ -6,7 +6,7 @@
  "CRC_CHECK" : true,
  "Clock_Conversion" : true,
  "DONE" : false,
- "DOWNLOAD_SPEED" : "default",
+ "DOWNLOAD_SPEED" : "250/10",
  "Default_Enum_Encoding" : "default",
  "Disable_Insert_Pad" : false,
  "ENCRYPTION_KEY" : false,
